@@ -13,7 +13,6 @@ struct Particle {
 
 struct Model {
     compute: Compute,
-    velocities: Arc<Mutex<Vec<Vec2>>>,
     positions: Arc<Mutex<Vec<Vec2>>>,
     threadpool: futures::executor::ThreadPool,
 }
@@ -38,7 +37,7 @@ pub struct Uniforms {
     repulsion_strength: f32,
 }
 
-const PARTICLE_COUNT: u32 = 1000;
+const PARTICLE_COUNT: u32 = 1;
 const WIDTH: u32 = 1440;
 const HEIGHT: u32 = 512;
 
@@ -54,55 +53,70 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
     let window = app.window(w_id).unwrap();
-    let device = window.device();
+    let device = window.swap_chain_device();
 
-    // Create the compute shader module.
-    let cs_desc = wgpu::include_wgsl!("shaders/cs.wgsl");
-    let cs_mod = device.create_shader_module(&cs_desc);
+    // The vector that we will write particle values to.
+    let mut positions = vec![];
+    let mut velocities = vec![];
+
+    for _ in 0..PARTICLE_COUNT {
+        let hwidth = WIDTH as f32 * 0.5;
+        let hheight = HEIGHT as f32 * 0.5;
+        let position_x = rand::thread_rng().gen_range(-hwidth, hwidth);
+        let position_y = rand::thread_rng().gen_range(-hheight, hheight);
+        let position = pt2(position_x, position_y);
+        positions.push(position);
+
+        let velocity_x = rand::thread_rng().gen_range(-1.0, 1.0);
+        let velocity_y = rand::thread_rng().gen_range(-1.0, 1.0);
+        velocities.push(pt2(velocity_x, velocity_y));
+    }
+
+    let position_bytes = vectors_as_byte_vec(&positions);
+    let velocity_bytes = vectors_as_byte_vec(&velocities);
 
     // Create the buffers that will store the result of our compute operation.
     let buffer_size =
         (PARTICLE_COUNT as usize * std::mem::size_of::<Vec2>()) as wgpu::BufferAddress;
+    println!("buffer size: {:?}", buffer_size);
 
-    let position_buffer_in = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("particle-positions-1"),
-        size: buffer_size,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
+    let position_buffer_in = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+        label: Some("particle-positions-in"),
+        contents: &position_bytes[..],
+        usage: wgpu::BufferUsage::STORAGE
+            | wgpu::BufferUsage::COPY_DST
+            | wgpu::BufferUsage::COPY_SRC,
     });
 
     let position_buffer_out = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("particle-positions-2"),
+        label: Some("particle-positions-out"),
         size: buffer_size,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::MAP_READ,
+        usage: wgpu::BufferUsage::STORAGE
+            | wgpu::BufferUsage::COPY_DST
+            | wgpu::BufferUsage::COPY_SRC,
         mapped_at_creation: false,
     });
 
-    let velocity_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("particle-velocitiess"),
-        size: buffer_size,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_DST
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
+    let velocity_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+        label: Some("particle-velocities"),
+        contents: &velocity_bytes[..],
+        usage: wgpu::BufferUsage::STORAGE
+            | wgpu::BufferUsage::COPY_DST
+            | wgpu::BufferUsage::COPY_SRC,
     });
 
     // Create the buffer that will store the uniforms.
     let uniforms = create_uniforms();
     let uniforms_bytes = uniforms_as_bytes(&uniforms);
-    let usage = wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST;
+    let usage = wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST;
     let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("uniform-buffer"),
         contents: uniforms_bytes,
         usage,
     });
+
+    // Create the compute shader module.
+    let cs_mod = wgpu::shader_from_spirv_bytes(device, include_bytes!("shaders/comp.spv"));
 
     // Create the bind group and pipeline.
     let bind_group_layout = create_bind_group_layout(device);
@@ -128,53 +142,26 @@ fn model(app: &App) -> Model {
         pipeline,
     };
 
-    // The vector that we will write particle values to.
-    let positions = Arc::new(Mutex::new(vec![]));
-    let velocities = Arc::new(Mutex::new(vec![]));
-
-    if let Ok(mut pstns) = positions.lock() {
-        let hwidth = WIDTH as f32 * 0.5;
-        let hheight = HEIGHT as f32 * 0.5;
-        let position_x = rand::thread_rng().gen_range(-hwidth, hwidth);
-        let position_y = rand::thread_rng().gen_range(-hheight, hheight);
-        pstns.push(pt2(position_x, position_y));
-    }
-
-    if let Ok(mut vlcts) = velocities.lock() {
-        let velocity_x = rand::thread_rng().gen_range(-1.0, 1.0);
-        let velocity_y = rand::thread_rng().gen_range(-1.0, 1.0);
-        vlcts.push(pt2(velocity_x, velocity_y));
-    }
-
     // Create a thread pool capable of running our GPU buffer read futures.
     let threadpool = futures::executor::ThreadPool::new().unwrap();
 
     Model {
         compute,
-        positions,
-        velocities,
+        positions: Arc::new(Mutex::new(positions)),
         threadpool,
     }
 }
 
 fn update(app: &App, model: &mut Model, _update: Update) {
     let window = app.main_window();
-    let device = window.device();
+    let device = window.swap_chain_device();
     let compute = &mut model.compute;
 
     // create a buffer for reading the particle positions
     let read_position_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("read-positions"),
         size: compute.buffer_size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    // create a buffer for reading particle velocities
-    let read_velocity_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("read-velocities"),
-        size: compute.buffer_size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
         mapped_at_creation: false,
     });
 
@@ -182,7 +169,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     let uniforms = create_uniforms();
     let uniforms_size = std::mem::size_of::<Uniforms>() as wgpu::BufferAddress;
     let uniforms_bytes = uniforms_as_bytes(&uniforms);
-    let usage = wgpu::BufferUsages::COPY_SRC;
+    let usage = wgpu::BufferUsage::COPY_SRC;
     let new_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("uniform-data-transfer"),
         contents: uniforms_bytes,
@@ -205,7 +192,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     {
         let pass_desc = wgpu::ComputePassDescriptor {
-            label: Some("compute_pass"),
+            label: Some("compute-pass"),
         };
         let mut cpass = encoder.begin_compute_pass(&pass_desc);
         cpass.set_pipeline(&compute.pipeline);
@@ -229,16 +216,8 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         compute.buffer_size,
     );
 
-    encoder.copy_buffer_to_buffer(
-        &compute.velocity_buffer,
-        0,
-        &read_velocity_buffer,
-        0,
-        compute.buffer_size,
-    );
-
     // Submit the compute pass to the device's queue.
-    window.queue().submit(Some(encoder.finish()));
+    window.swap_chain_queue().submit(Some(encoder.finish()));
 
     // Spawn a future that reads the result of the compute pass.
     let positions = model.positions.clone();
@@ -251,53 +230,31 @@ fn update(app: &App, model: &mut Model, _update: Update) {
             if let Ok(mut positions) = positions.lock() {
                 println!("locked positions");
                 let bytes = &slice.get_mapped_range()[..];
-                println!("read position bytes");
+                println!("read position bytes: {:?}", bytes.len());
                 // "Cast" the slice of bytes to a slice of Vec2 as required.
                 let slice = {
                     let len = bytes.len() / std::mem::size_of::<Vec2>();
                     let ptr = bytes.as_ptr() as *const Vec2;
                     unsafe { std::slice::from_raw_parts(ptr, len) }
                 };
+
+                println!("positions before: {:?}", positions);
+                println!("slice: {:?}", slice);
 
                 println!("casted and copying");
                 println!("slice length: {:?}", slice.len());
                 println!("positions length: {:?}", positions.len());
                 positions.copy_from_slice(slice);
                 println!("done");
+
+                println!("positions after: {:?}", positions);
+
+                std::process::exit(1);
             }
         }
     };
 
     model.threadpool.spawn_ok(read_positions_future);
-
-    let velocities = model.velocities.clone();
-    let future = async move {
-        println!("reading velocity buffer");
-        let slice = read_velocity_buffer.slice(..);
-        println!("mapping velocity buffer");
-        if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
-            println!("locking velocities");
-            if let Ok(mut velocities) = velocities.lock() {
-                println!("locked velocities");
-                let bytes = &slice.get_mapped_range()[..];
-                println!("read position bytes");
-                // "Cast" the slice of bytes to a slice of Vec2 as required.
-                let slice = {
-                    let len = bytes.len() / std::mem::size_of::<Vec2>();
-                    let ptr = bytes.as_ptr() as *const Vec2;
-                    unsafe { std::slice::from_raw_parts(ptr, len) }
-                };
-
-                println!("casted and copying");
-                println!("slice length: {:?}", slice.len());
-                println!("velocities length: {:?}", velocities.len());
-                velocities.copy_from_slice(slice);
-                println!("done");
-            }
-        }
-    };
-
-    model.threadpool.spawn_ok(future);
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
@@ -305,6 +262,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
 
     if let Ok(positions) = model.positions.lock() {
+        println!("positions in view: {:?}", positions);
         for &p in positions.iter() {
             draw.ellipse().color(WHITE).x_y(p.x, p.y);
         }
@@ -327,27 +285,40 @@ fn uniforms_as_bytes(uniforms: &Uniforms) -> &[u8] {
     unsafe { wgpu::bytes::from(uniforms) }
 }
 
+pub fn float_as_bytes(data: &f32) -> &[u8] {
+    unsafe { wgpu::bytes::from(data) }
+}
+
+pub fn vectors_as_byte_vec(data: &[Vec2]) -> Vec<u8> {
+    let mut bytes = vec![];
+    data.iter().for_each(|v| {
+        bytes.extend(float_as_bytes(&v.x));
+        bytes.extend(float_as_bytes(&v.y));
+    });
+    bytes
+}
+
 fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let storage_dynamic = false;
     let storage_readonly = false;
     let uniform_dynamic = false;
     wgpu::BindGroupLayoutBuilder::new()
         .storage_buffer(
-            wgpu::ShaderStages::COMPUTE,
+            wgpu::ShaderStage::COMPUTE,
             storage_dynamic,
             storage_readonly,
         )
         .storage_buffer(
-            wgpu::ShaderStages::COMPUTE,
+            wgpu::ShaderStage::COMPUTE,
             storage_dynamic,
             storage_readonly,
         )
         .storage_buffer(
-            wgpu::ShaderStages::COMPUTE,
+            wgpu::ShaderStage::COMPUTE,
             storage_dynamic,
             storage_readonly,
         )
-        .uniform_buffer(wgpu::ShaderStages::COMPUTE, uniform_dynamic)
+        .uniform_buffer(wgpu::ShaderStage::COMPUTE, uniform_dynamic)
         .build(device)
 }
 
@@ -363,8 +334,8 @@ fn create_bind_group(
     let buffer_size_bytes = std::num::NonZeroU64::new(buffer_size).unwrap();
     wgpu::BindGroupBuilder::new()
         .buffer_bytes(position_buffer_1, 0, Some(buffer_size_bytes))
-        .buffer_bytes(position_buffer_2, 1, Some(buffer_size_bytes))
-        .buffer_bytes(velocity_buffer, 2, Some(buffer_size_bytes))
+        .buffer_bytes(position_buffer_2, 0, Some(buffer_size_bytes))
+        .buffer_bytes(velocity_buffer, 0, Some(buffer_size_bytes))
         .buffer::<Uniforms>(uniform_buffer, 0..1)
         .build(device, layout)
 }

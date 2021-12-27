@@ -1,0 +1,70 @@
+// NOTE: This shader requires being manually compiled to SPIR-V in order to
+// avoid having downstream users require building shaderc and compiling the
+// shader themselves. If you update this shader, be sure to also re-compile it
+// and update `comp.spv`. You can do so using `glslangValidator` with the
+// following command: `glslangValidator -V shader.comp`
+
+#version 450
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer PositionBufferIn { vec2[] positions_in; };
+
+layout(set = 0, binding = 1) buffer PositionBufferOut { vec2[] positions_out; };
+
+layout(set = 0, binding = 2) buffer VelocityBuffer { vec2[] velocities; };
+
+layout(set = 0, binding = 3) uniform Uniforms {
+    vec2 size;
+    float speed;
+    uint particle_count;
+    float attraction_strength;
+    float repulsion_strength;
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    vec2 position = positions_in[index];
+    vec2 velocity = velocities[index];
+    vec2 acceleration = vec2(0.0, 0.0);
+
+    for (uint i = 0; i < particle_count; i++) {
+        if (i == index) {
+            continue;
+        }
+
+        vec2 other_position = positions_in[i];
+        vec2 diff = other_position - position;
+        float dist = length(diff);
+
+        if (dist < 0.5) {
+            continue;
+        }
+
+        vec2 dir = normalize(diff);
+        float r2 = dist * dist;
+
+        vec2 attraction_force = dir * attraction_strength / r2;
+        vec2 repulsion_force = dir * repulsion_strength / r2;
+
+        acceleration += attraction_force + repulsion_force;
+    }
+
+    velocity += acceleration * speed;
+    position += acceleration * speed;
+
+    if (position.x < size.x * 0.5) {
+        position.x = position.x + size.x;
+    } else if (position.x > size.x * 0.5) {
+        position.x = position.y - size.x;
+    }
+
+    if (position.y < size.y * 0.5) {
+        position.y = position.y + size.y;
+    } else if (position.y > size.y * 0.5) {
+        position.y = position.y - size.y;
+    }
+
+    velocities[index] = velocity;
+    positions_out[index] = position;
+}

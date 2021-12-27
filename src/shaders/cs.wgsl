@@ -1,11 +1,11 @@
 [[block]]
 struct PositionBuffer {
-    positions: [[stride(8)]] array<vec2<f32>>;
+    positions: array<vec2<f32>>;
 };
 
 [[block]]
 struct VelocityBuffer {
-    velocities: [[stride(8)]] array<vec2<f32>>;
+    velocities: array<vec2<f32>>;
 };
 
 [[block]]
@@ -18,9 +18,9 @@ struct Uniforms {
 };
 
 [[group(0), binding(0)]]
-var<storage, read_write> position_buffer_in: PositionBuffer;
+var<storage, read> position_buffer_in: PositionBuffer;
 [[group(0), binding(1)]]
-var<storage, read_write> position_buffer_out: PositionBuffer;
+var<storage, write> position_buffer_out: PositionBuffer;
 [[group(0), binding(2)]]
 var<storage, read_write> velocity_buffer: VelocityBuffer;
 [[group(0), binding(3)]]
