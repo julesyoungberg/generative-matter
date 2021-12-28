@@ -37,7 +37,10 @@ pub struct Uniforms {
     height: float,
     speed: float,
     attraction_strength: float,
+    attraction_range: float,
     repulsion_strength: float,
+    repulsion_range: float,
+    center_strength: float,
 }
 
 const PARTICLE_COUNT: u32 = 1000;
@@ -263,9 +266,12 @@ fn create_uniforms() -> Uniforms {
         particle_count: PARTICLE_COUNT,
         width: WIDTH as f32,
         height: HEIGHT as f32,
-        speed: 0.5,
+        speed: 0.2,
         attraction_strength: 110.0,
+        attraction_range: 0.0,
         repulsion_strength: 130.0,
+        repulsion_range: 0.0,
+        center_strength: 0.0001,
     }
 }
 

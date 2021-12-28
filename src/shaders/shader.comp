@@ -22,15 +22,20 @@ layout(set = 0, binding = 3) uniform Uniforms {
     float height;
     float speed;
     float attraction_strength;
+    float attraction_range;
     float repulsion_strength;
+    float repulsion_range;
+    float center_strength;
 };
 
 void main() {
+    // get particle data
     uint index = gl_GlobalInvocationID.x;
     vec2 position = positions_in[index];
     vec2 velocity = velocities[index];
     vec2 acceleration = vec2(0.0, 0.0);
 
+    // loop through every other
     for (uint i = 0; i < particle_count; i++) {
         if (i == index) {
             continue;
@@ -40,39 +45,48 @@ void main() {
         vec2 diff = other_position - position;
         float dist = length(diff);
 
+        // determine force to apply
         if (dist >= 0.5) {
             vec2 dir = normalize(diff);
             float r2 = dist * dist;
 
-            vec2 attraction_force = dir * attraction_strength / r2;
-            vec2 repulsion_force = -dir * repulsion_strength / r2;
+            if (attraction_range == 0.0 || dist <= attraction_range) {
+                acceleration += dir * attraction_strength / r2;
+            }
 
-            acceleration += attraction_force + repulsion_force;
+            if (repulsion_range == 0.0 || dist <= repulsion_range) {
+                acceleration += -dir * repulsion_strength / r2;
+            }
         }
     }
 
-    vec2 max_force = vec2(1.0);
-    acceleration = clamp(acceleration, -max_force, max_force);
+    // attract to center
+    acceleration += position * -center_strength;
+
+    // clamp acceleration for stability
+    vec2 max_acceleration = vec2(1.0);
+    acceleration = clamp(acceleration, -max_acceleration, max_acceleration);
 
     velocity += acceleration * speed;
     position += velocity * speed;
 
-    float hwidth = width * 0.5;
+    // // wrap around horizontally
+    // float hwidth = width * 0.5;
+    // if (position.x < -hwidth) {
+    //     position.x += width;
+    // } else if (position.x > hwidth) {
+    //     position.x -= width;
+    // }
 
-    if (position.x < -hwidth) {
-        position.x += width;
-    } else if (position.x > hwidth) {
-        position.x -= width;
-    }
+    // // wrap around vertically
+    // float hheight = height * 0.5;
+    // if (position.y < -hheight) {
+    //     position.y += height;
+    // } else if (position.y > hheight) {
+    //     position.y -= height;
+    // }
 
-    float hheight = height * 0.5;
-
-    if (position.y < -hheight) {
-        position.y += height;
-    } else if (position.y > hheight) {
-        position.y -= height;
-    }
-
+    // update buffers
     velocities[index] = velocity;
     positions_out[index] = position;
 }
