@@ -1,3 +1,5 @@
+use glsl_layout::float;
+use glsl_layout::*;
 use nannou::prelude::*;
 use nannou::wgpu::BufferInitDescriptor;
 use rand;
@@ -28,18 +30,19 @@ struct Compute {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Debug, Default, Clone, Copy, Uniform)]
 pub struct Uniforms {
-    size: Vec2,
-    speed: f32,
-    particle_count: u32,
-    attraction_strength: f32,
-    repulsion_strength: f32,
+    particle_count: uint,
+    width: float,
+    height: float,
+    speed: float,
+    attraction_strength: float,
+    repulsion_strength: float,
 }
 
-const PARTICLE_COUNT: u32 = 1;
+const PARTICLE_COUNT: u32 = 1000;
 const WIDTH: u32 = 1440;
-const HEIGHT: u32 = 512;
+const HEIGHT: u32 = 810;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -78,7 +81,6 @@ fn model(app: &App) -> Model {
     // Create the buffers that will store the result of our compute operation.
     let buffer_size =
         (PARTICLE_COUNT as usize * std::mem::size_of::<Vec2>()) as wgpu::BufferAddress;
-    println!("buffer size: {:?}", buffer_size);
 
     let position_buffer_in = device.create_buffer_init(&wgpu::BufferInitDescriptor {
         label: Some("particle-positions-in"),
@@ -88,13 +90,12 @@ fn model(app: &App) -> Model {
             | wgpu::BufferUsage::COPY_SRC,
     });
 
-    let position_buffer_out = device.create_buffer(&wgpu::BufferDescriptor {
+    let position_buffer_out = device.create_buffer_init(&wgpu::BufferInitDescriptor {
         label: Some("particle-positions-out"),
-        size: buffer_size,
+        contents: &position_bytes[..],
         usage: wgpu::BufferUsage::STORAGE
             | wgpu::BufferUsage::COPY_DST
             | wgpu::BufferUsage::COPY_SRC,
-        mapped_at_creation: false,
     });
 
     let velocity_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
@@ -107,7 +108,9 @@ fn model(app: &App) -> Model {
 
     // Create the buffer that will store the uniforms.
     let uniforms = create_uniforms();
-    let uniforms_bytes = uniforms_as_bytes(&uniforms);
+    println!("uniforms: {:?}", uniforms);
+    let std140_uniforms = uniforms.std140();
+    let uniforms_bytes = std140_uniforms.as_raw();
     let usage = wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST;
     let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("uniform-buffer"),
@@ -167,8 +170,9 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     // An update for the uniform buffer with the current time.
     let uniforms = create_uniforms();
-    let uniforms_size = std::mem::size_of::<Uniforms>() as wgpu::BufferAddress;
-    let uniforms_bytes = uniforms_as_bytes(&uniforms);
+    let std140_uniforms = uniforms.std140();
+    let uniforms_bytes = std140_uniforms.as_raw();
+    let uniforms_size = uniforms_bytes.len();
     let usage = wgpu::BufferUsage::COPY_SRC;
     let new_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("uniform-data-transfer"),
@@ -187,7 +191,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         0,
         &compute.uniform_buffer,
         0,
-        uniforms_size,
+        uniforms_size as u64,
     );
 
     {
@@ -197,7 +201,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         let mut cpass = encoder.begin_compute_pass(&pass_desc);
         cpass.set_pipeline(&compute.pipeline);
         cpass.set_bind_group(0, &compute.bind_group, &[]);
-        cpass.dispatch(PARTICLE_COUNT as u32, 1, 1);
+        cpass.dispatch(PARTICLE_COUNT, 1, 1);
     }
 
     encoder.copy_buffer_to_buffer(
@@ -222,15 +226,10 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     // Spawn a future that reads the result of the compute pass.
     let positions = model.positions.clone();
     let read_positions_future = async move {
-        println!("reading position buffer");
         let slice = read_position_buffer.slice(..);
-        println!("mapping position buffer");
         if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
-            println!("locking positions");
             if let Ok(mut positions) = positions.lock() {
-                println!("locked positions");
                 let bytes = &slice.get_mapped_range()[..];
-                println!("read position bytes: {:?}", bytes.len());
                 // "Cast" the slice of bytes to a slice of Vec2 as required.
                 let slice = {
                     let len = bytes.len() / std::mem::size_of::<Vec2>();
@@ -238,18 +237,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
                     unsafe { std::slice::from_raw_parts(ptr, len) }
                 };
 
-                println!("positions before: {:?}", positions);
-                println!("slice: {:?}", slice);
-
-                println!("casted and copying");
-                println!("slice length: {:?}", slice.len());
-                println!("positions length: {:?}", positions.len());
                 positions.copy_from_slice(slice);
-                println!("done");
-
-                println!("positions after: {:?}", positions);
-
-                std::process::exit(1);
             }
         }
     };
@@ -262,9 +250,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
 
     if let Ok(positions) = model.positions.lock() {
-        println!("positions in view: {:?}", positions);
         for &p in positions.iter() {
-            draw.ellipse().color(WHITE).x_y(p.x, p.y);
+            draw.ellipse().radius(10.0).color(WHITE).x_y(p.x, p.y);
         }
     }
 
@@ -273,11 +260,12 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
 fn create_uniforms() -> Uniforms {
     Uniforms {
-        size: pt2(WIDTH as f32, HEIGHT as f32),
-        speed: 1.0,
         particle_count: PARTICLE_COUNT,
-        attraction_strength: 1.0,
-        repulsion_strength: 1.0,
+        width: WIDTH as f32,
+        height: HEIGHT as f32,
+        speed: 0.5,
+        attraction_strength: 110.0,
+        repulsion_strength: 130.0,
     }
 }
 
@@ -325,16 +313,16 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 fn create_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
-    position_buffer_1: &wgpu::Buffer,
-    position_buffer_2: &wgpu::Buffer,
+    position_buffer_in: &wgpu::Buffer,
+    position_buffer_out: &wgpu::Buffer,
     velocity_buffer: &wgpu::Buffer,
     buffer_size: wgpu::BufferAddress,
     uniform_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     let buffer_size_bytes = std::num::NonZeroU64::new(buffer_size).unwrap();
     wgpu::BindGroupBuilder::new()
-        .buffer_bytes(position_buffer_1, 0, Some(buffer_size_bytes))
-        .buffer_bytes(position_buffer_2, 0, Some(buffer_size_bytes))
+        .buffer_bytes(position_buffer_in, 0, Some(buffer_size_bytes))
+        .buffer_bytes(position_buffer_out, 0, Some(buffer_size_bytes))
         .buffer_bytes(velocity_buffer, 0, Some(buffer_size_bytes))
         .buffer::<Uniforms>(uniform_buffer, 0..1)
         .build(device, layout)
