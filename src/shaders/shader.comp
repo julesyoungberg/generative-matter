@@ -26,6 +26,9 @@ layout(set = 0, binding = 3) uniform Uniforms {
     float repulsion_strength;
     float repulsion_range;
     float center_strength;
+    float particle_radius;
+    float collision_response;
+    float momentum;
 };
 
 void main() {
@@ -34,6 +37,8 @@ void main() {
     vec2 position = positions_in[index];
     vec2 velocity = velocities[index];
     vec2 acceleration = vec2(0.0, 0.0);
+
+    float radius2 = particle_radius * 2.0;
 
     // loop through every other
     for (uint i = 0; i < particle_count; i++) {
@@ -58,16 +63,28 @@ void main() {
                 acceleration += -dir * repulsion_strength / r2;
             }
         }
+
+        // detect collisions
+        if (dist < radius2) {
+            vec2 mv = diff * (-(radius2 - dist));
+            velocity += mv * collision_response;
+        }
     }
 
     // attract to center
     acceleration += position * -center_strength;
 
     // clamp acceleration for stability
-    vec2 max_acceleration = vec2(1.0);
+    float max_acceleration = 1.0;
     acceleration = clamp(acceleration, -max_acceleration, max_acceleration);
 
+    velocity *= momentum;
     velocity += acceleration * speed;
+
+    // clamp velocity
+    float max_velocity = 1.0;
+    velocity = clamp(velocity, -max_velocity, max_velocity);
+
     position += velocity * speed;
 
     // // wrap around horizontally

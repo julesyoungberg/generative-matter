@@ -41,11 +41,15 @@ pub struct Uniforms {
     repulsion_strength: float,
     repulsion_range: float,
     center_strength: float,
+    particle_radius: float,
+    collision_response: float,
+    momentum: float,
 }
 
-const PARTICLE_COUNT: u32 = 1000;
 const WIDTH: u32 = 1440;
 const HEIGHT: u32 = 810;
+const PARTICLE_COUNT: u32 = 5000;
+const PARTICLE_RADIUS: float = 5.0;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -254,7 +258,10 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     if let Ok(positions) = model.positions.lock() {
         for &p in positions.iter() {
-            draw.ellipse().radius(10.0).color(WHITE).x_y(p.x, p.y);
+            draw.ellipse()
+                .radius(PARTICLE_RADIUS)
+                .color(WHITE)
+                .x_y(p.x, p.y);
         }
     }
 
@@ -266,12 +273,15 @@ fn create_uniforms() -> Uniforms {
         particle_count: PARTICLE_COUNT,
         width: WIDTH as f32,
         height: HEIGHT as f32,
-        speed: 0.2,
-        attraction_strength: 110.0,
-        attraction_range: 0.0,
-        repulsion_strength: 130.0,
-        repulsion_range: 0.0,
-        center_strength: 0.0001,
+        speed: 1.0,
+        attraction_strength: 32.0,
+        attraction_range: 40.0,
+        repulsion_strength: 30.0,
+        repulsion_range: 80.0,
+        center_strength: 0.00001,
+        particle_radius: PARTICLE_RADIUS,
+        collision_response: 0.5,
+        momentum: 0.2,
     }
 }
 
