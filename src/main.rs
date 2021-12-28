@@ -1,10 +1,13 @@
 use glsl_layout::float;
 use glsl_layout::*;
 use nannou::prelude::*;
+use nannou::ui::prelude::*;
 use nannou::wgpu::BufferInitDescriptor;
 use rand;
 use rand::Rng;
 use std::sync::{Arc, Mutex};
+
+mod components;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -13,10 +16,30 @@ struct Particle {
     velocity: Vec2,
 }
 
+widget_ids! {
+    /// UI widget ids
+    pub struct WidgetIds {
+        controls_container,
+        controls_wrapper,
+        speed,
+        attraction_strength,
+        attraction_range,
+        repulsion_strength,
+        repulsion_range,
+        center_strength,
+        particle_radius,
+        collision_response,
+        momentum,
+    }
+}
+
 struct Model {
     compute: Compute,
+    uniforms: Uniforms,
     positions: Arc<Mutex<Vec<Vec2>>>,
     threadpool: futures::executor::ThreadPool,
+    widget_ids: WidgetIds,
+    ui: Ui,
 }
 
 struct Compute {
@@ -49,7 +72,6 @@ pub struct Uniforms {
 const WIDTH: u32 = 1440;
 const HEIGHT: u32 = 810;
 const PARTICLE_COUNT: u32 = 5000;
-const PARTICLE_RADIUS: float = 5.0;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -155,14 +177,119 @@ fn model(app: &App) -> Model {
     // Create a thread pool capable of running our GPU buffer read futures.
     let threadpool = futures::executor::ThreadPool::new().unwrap();
 
+    // create UI
+    let mut ui = app.new_ui().build().unwrap();
+    let widget_ids = WidgetIds::new(ui.widget_id_generator());
+
     Model {
         compute,
+        uniforms,
         positions: Arc::new(Mutex::new(positions)),
         threadpool,
+        widget_ids,
+        ui,
+    }
+}
+
+fn update_ui(model: &mut Model) {
+    let ui = &mut model.ui.set_widgets();
+
+    components::container([220.0, 600.0])
+        .top_left_with_margin(10.0)
+        .set(model.widget_ids.controls_container, ui);
+
+    components::wrapper([200.0, 600.0])
+        .parent(model.widget_ids.controls_container)
+        .top_left_with_margin(10.0)
+        .set(model.widget_ids.controls_wrapper, ui);
+
+    if let Some(value) = components::slider(model.uniforms.speed, 0.0, 1.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Speed")
+        .set(model.widget_ids.speed, ui)
+    {
+        model.uniforms.speed = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.attraction_strength, 0.0, 200.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Attraction Strength")
+        .set(model.widget_ids.attraction_strength, ui)
+    {
+        model.uniforms.attraction_strength = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.repulsion_strength, 0.0, 200.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Repulsion Strength")
+        .set(model.widget_ids.repulsion_strength, ui)
+    {
+        model.uniforms.repulsion_strength = value;
+    }
+
+    let max_range = WIDTH.max(HEIGHT) as f32;
+
+    if let Some(value) = components::slider(model.uniforms.attraction_range, 0.0, max_range)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Attraction Range")
+        .set(model.widget_ids.attraction_range, ui)
+    {
+        model.uniforms.attraction_range = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.repulsion_range, 0.0, max_range)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Repulsion Range")
+        .set(model.widget_ids.repulsion_range, ui)
+    {
+        model.uniforms.repulsion_range = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.center_strength, 0.0, 1.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Center Strength")
+        .set(model.widget_ids.center_strength, ui)
+    {
+        model.uniforms.center_strength = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.particle_radius, 0.0, 10.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Particle Radius")
+        .set(model.widget_ids.particle_radius, ui)
+    {
+        model.uniforms.particle_radius = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.collision_response, 0.0, 1.5)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Collision Response")
+        .set(model.widget_ids.collision_response, ui)
+    {
+        model.uniforms.collision_response = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.momentum, 0.0, 1.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Momentum")
+        .set(model.widget_ids.momentum, ui)
+    {
+        model.uniforms.momentum = value;
     }
 }
 
 fn update(app: &App, model: &mut Model, _update: Update) {
+    update_ui(model);
+
     let window = app.main_window();
     let device = window.swap_chain_device();
     let compute = &mut model.compute;
@@ -176,8 +303,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     });
 
     // An update for the uniform buffer with the current time.
-    let uniforms = create_uniforms();
-    let std140_uniforms = uniforms.std140();
+    let std140_uniforms = model.uniforms.std140();
     let uniforms_bytes = std140_uniforms.as_raw();
     let uniforms_size = uniforms_bytes.len();
     let usage = wgpu::BufferUsage::COPY_SRC;
@@ -259,7 +385,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     if let Ok(positions) = model.positions.lock() {
         for &p in positions.iter() {
             draw.ellipse()
-                .radius(PARTICLE_RADIUS)
+                .radius(model.uniforms.particle_radius)
                 .color(WHITE)
                 .x_y(p.x, p.y);
         }
@@ -279,14 +405,10 @@ fn create_uniforms() -> Uniforms {
         repulsion_strength: 30.0,
         repulsion_range: 80.0,
         center_strength: 0.00001,
-        particle_radius: PARTICLE_RADIUS,
+        particle_radius: 5.0,
         collision_response: 0.5,
         momentum: 0.2,
     }
-}
-
-fn uniforms_as_bytes(uniforms: &Uniforms) -> &[u8] {
-    unsafe { wgpu::bytes::from(uniforms) }
 }
 
 pub fn float_as_bytes(data: &f32) -> &[u8] {
