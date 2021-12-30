@@ -22,13 +22,15 @@ layout(set = 0, binding = 3) uniform Uniforms {
     float height;
     float speed;
     float attraction_strength;
-    float attraction_range;
     float repulsion_strength;
+    float attraction_range;
     float repulsion_range;
     float center_strength;
     float particle_radius;
     float collision_response;
     float momentum;
+    float max_acceleration;
+    float max_velocity;
 };
 
 void main() {
@@ -51,7 +53,7 @@ void main() {
         float dist = length(diff);
 
         // determine force to apply
-        if (dist >= 0.5) {
+        if (dist > 0.0) {
             vec2 dir = normalize(diff);
             float r2 = dist * dist;
 
@@ -62,12 +64,12 @@ void main() {
             if (repulsion_range == 0.0 || dist <= repulsion_range) {
                 acceleration += -dir * repulsion_strength / r2;
             }
-        }
 
-        // detect collisions
-        if (dist < radius2) {
-            vec2 mv = diff * (-(radius2 - dist));
-            velocity += mv * collision_response;
+            // detect collisions
+            if (dist < radius2) {
+                vec2 mv = diff * (-(radius2 - dist));
+                velocity += mv * collision_response;
+            }
         }
     }
 
@@ -75,33 +77,19 @@ void main() {
     acceleration += position * -center_strength;
 
     // clamp acceleration for stability
-    float max_acceleration = 1.0;
-    acceleration = clamp(acceleration, -max_acceleration, max_acceleration);
+    if (max_acceleration > 0.0) {
+        acceleration = clamp(acceleration, -max_acceleration, max_acceleration);
+    }
 
     velocity *= momentum;
     velocity += acceleration * speed;
 
     // clamp velocity
-    float max_velocity = 1.0;
-    velocity = clamp(velocity, -max_velocity, max_velocity);
+    if (max_velocity > 0.0) {
+        velocity = clamp(velocity, -max_velocity, max_velocity);
+    }
 
     position += velocity * speed;
-
-    // // wrap around horizontally
-    // float hwidth = width * 0.5;
-    // if (position.x < -hwidth) {
-    //     position.x += width;
-    // } else if (position.x > hwidth) {
-    //     position.x -= width;
-    // }
-
-    // // wrap around vertically
-    // float hheight = height * 0.5;
-    // if (position.y < -hheight) {
-    //     position.y += height;
-    // } else if (position.y > hheight) {
-    //     position.y -= height;
-    // }
 
     // update buffers
     velocities[index] = velocity;

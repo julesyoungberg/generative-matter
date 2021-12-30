@@ -2,6 +2,7 @@ use glsl_layout::float;
 use glsl_layout::*;
 use nannou::prelude::*;
 use nannou::ui::prelude::*;
+use nannou::ui::DrawToFrameError;
 use nannou::wgpu::BufferInitDescriptor;
 use rand;
 use rand::Rng;
@@ -30,6 +31,8 @@ widget_ids! {
         particle_radius,
         collision_response,
         momentum,
+        max_acceleration,
+        max_velocity,
     }
 }
 
@@ -40,6 +43,7 @@ struct Model {
     threadpool: futures::executor::ThreadPool,
     widget_ids: WidgetIds,
     ui: Ui,
+    window_id: WindowId,
 }
 
 struct Compute {
@@ -60,17 +64,19 @@ pub struct Uniforms {
     height: float,
     speed: float,
     attraction_strength: float,
-    attraction_range: float,
     repulsion_strength: float,
+    attraction_range: float,
     repulsion_range: float,
     center_strength: float,
     particle_radius: float,
     collision_response: float,
     momentum: float,
+    max_acceleration: float,
+    max_velocity: float,
 }
 
-const WIDTH: u32 = 1440;
-const HEIGHT: u32 = 810;
+const WIDTH: u32 = 1080;
+const HEIGHT: u32 = 1080;
 const PARTICLE_COUNT: u32 = 5000;
 
 fn main() {
@@ -78,24 +84,24 @@ fn main() {
 }
 
 fn model(app: &App) -> Model {
-    let w_id = app
+    let window_id = app
         .new_window()
         .size(WIDTH, HEIGHT)
         .view(view)
         .build()
         .unwrap();
-    let window = app.window(w_id).unwrap();
+    let window = app.window(window_id).unwrap();
     let device = window.swap_chain_device();
 
     // The vector that we will write particle values to.
     let mut positions = vec![];
     let mut velocities = vec![];
 
+    let qwidth = WIDTH as f32 * 0.25;
+    let qheight = HEIGHT as f32 * 0.25;
     for _ in 0..PARTICLE_COUNT {
-        let hwidth = WIDTH as f32 * 0.5;
-        let hheight = HEIGHT as f32 * 0.5;
-        let position_x = rand::thread_rng().gen_range(-hwidth, hwidth);
-        let position_y = rand::thread_rng().gen_range(-hheight, hheight);
+        let position_x = rand::thread_rng().gen_range(-qwidth, qwidth);
+        let position_y = rand::thread_rng().gen_range(-qheight, qheight);
         let position = pt2(position_x, position_y);
         positions.push(position);
 
@@ -188,24 +194,26 @@ fn model(app: &App) -> Model {
         threadpool,
         widget_ids,
         ui,
+        window_id,
     }
 }
 
 fn update_ui(model: &mut Model) {
     let ui = &mut model.ui.set_widgets();
+    let height = 420.0;
 
-    components::container([220.0, 600.0])
+    components::container([220.0, height])
         .top_left_with_margin(10.0)
         .set(model.widget_ids.controls_container, ui);
 
-    components::wrapper([200.0, 600.0])
+    components::wrapper([200.0, height - 20.0])
         .parent(model.widget_ids.controls_container)
         .top_left_with_margin(10.0)
         .set(model.widget_ids.controls_wrapper, ui);
 
     if let Some(value) = components::slider(model.uniforms.speed, 0.0, 1.0)
         .parent(model.widget_ids.controls_wrapper)
-        .down(10.0)
+        .top_left()
         .label("Speed")
         .set(model.widget_ids.speed, ui)
     {
@@ -230,7 +238,7 @@ fn update_ui(model: &mut Model) {
         model.uniforms.repulsion_strength = value;
     }
 
-    let max_range = WIDTH.max(HEIGHT) as f32;
+    let max_range = WIDTH.min(HEIGHT) as f32;
 
     if let Some(value) = components::slider(model.uniforms.attraction_range, 0.0, max_range)
         .parent(model.widget_ids.controls_wrapper)
@@ -284,6 +292,24 @@ fn update_ui(model: &mut Model) {
         .set(model.widget_ids.momentum, ui)
     {
         model.uniforms.momentum = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.max_acceleration, 0.0, 2.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Max Acceleration")
+        .set(model.widget_ids.max_acceleration, ui)
+    {
+        model.uniforms.max_acceleration = value;
+    }
+
+    if let Some(value) = components::slider(model.uniforms.max_velocity, 0.0, 2.0)
+        .parent(model.widget_ids.controls_wrapper)
+        .down(10.0)
+        .label("Max Velocity")
+        .set(model.widget_ids.max_velocity, ui)
+    {
+        model.uniforms.max_velocity = value;
     }
 }
 
@@ -378,6 +404,24 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     model.threadpool.spawn_ok(read_positions_future);
 }
 
+fn draw_ui(app: &App, model: &Model, frame: &Frame) {
+    let color_attachment_desc = frame.color_attachment_descriptor();
+    let primitives = model.ui.draw();
+    let window = app
+        .window(model.window_id)
+        .ok_or(DrawToFrameError::InvalidWindow)
+        .unwrap();
+    let mut ui_encoder = frame.command_encoder();
+    ui::encode_render_pass(
+        &model.ui,
+        &window,
+        primitives,
+        color_attachment_desc,
+        &mut *ui_encoder,
+    )
+    .unwrap();
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     frame.clear(BLACK);
     let draw = app.draw();
@@ -392,6 +436,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     draw.to_frame(app, &frame).unwrap();
+
+    draw_ui(app, model, &frame);
 }
 
 fn create_uniforms() -> Uniforms {
@@ -401,13 +447,15 @@ fn create_uniforms() -> Uniforms {
         height: HEIGHT as f32,
         speed: 1.0,
         attraction_strength: 32.0,
-        attraction_range: 40.0,
         repulsion_strength: 30.0,
-        repulsion_range: 80.0,
-        center_strength: 0.00001,
-        particle_radius: 5.0,
+        attraction_range: 13.0, // 0.045,
+        repulsion_range: 20.0,  // 1.2,
+        center_strength: 0.0001,
+        particle_radius: 2.0,
         collision_response: 0.5,
-        momentum: 0.2,
+        momentum: 0.8,
+        max_acceleration: 0.0,
+        max_velocity: 1.0,
     }
 }
 
