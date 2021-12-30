@@ -75,9 +75,9 @@ pub struct Uniforms {
     max_velocity: float,
 }
 
-const WIDTH: u32 = 1080;
+const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
-const PARTICLE_COUNT: u32 = 5000;
+const PARTICLE_COUNT: u32 = 8000;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -97,11 +97,13 @@ fn model(app: &App) -> Model {
     let mut positions = vec![];
     let mut velocities = vec![];
 
-    let qwidth = WIDTH as f32 * 0.25;
-    let qheight = HEIGHT as f32 * 0.25;
+    let max_radius = WIDTH as f32 * 0.1;
     for _ in 0..PARTICLE_COUNT {
-        let position_x = rand::thread_rng().gen_range(-qwidth, qwidth);
-        let position_y = rand::thread_rng().gen_range(-qheight, qheight);
+        let position_angle =
+            rand::thread_rng().gen_range(-std::f32::consts::PI, std::f32::consts::PI);
+        let position_radius = rand::thread_rng().gen_range(0.0, max_radius);
+        let position_x = position_radius * position_angle.cos();
+        let position_y = position_radius * position_angle.sin();
         let position = pt2(position_x, position_y);
         positions.push(position);
 
@@ -446,14 +448,14 @@ fn create_uniforms() -> Uniforms {
         width: WIDTH as f32,
         height: HEIGHT as f32,
         speed: 1.0,
-        attraction_strength: 32.0,
-        repulsion_strength: 30.0,
-        attraction_range: 13.0, // 0.045,
-        repulsion_range: 20.0,  // 1.2,
+        attraction_strength: 2.0,
+        repulsion_strength: 2.0,
+        attraction_range: 10.0, // 0.045,
+        repulsion_range: 120.0, // 1.2,
         center_strength: 0.0001,
         particle_radius: 2.0,
-        collision_response: 0.5,
-        momentum: 0.8,
+        collision_response: 0.1,
+        momentum: 0.86,
         max_acceleration: 0.0,
         max_velocity: 1.0,
     }
