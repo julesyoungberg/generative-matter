@@ -6,13 +6,6 @@ use rand;
 use rand::Rng;
 use std::sync::{Arc, Mutex};
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-struct Particle {
-    position: Vec2,
-    velocity: Vec2,
-}
-
 struct Model {
     compute: Compute,
     uniforms: Uniforms,
