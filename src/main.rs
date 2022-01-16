@@ -1,45 +1,20 @@
-use glsl_layout::float;
-use glsl_layout::*;
-use nannou::prelude::*;
-use nannou::wgpu::BufferInitDescriptor;
-use rand;
-use rand::Rng;
+use std::fs;
 use std::sync::{Arc, Mutex};
 
+use nannou::prelude::*;
+use particles::GPUParticleSystem;
+
+// mod capture;
+mod compute;
+mod particles;
+mod uniforms;
+
 struct Model {
-    compute: Compute,
-    uniforms: Uniforms,
+    compute: compute::Compute,
     positions: Arc<Mutex<Vec<Vec2>>>,
     threadpool: futures::executor::ThreadPool,
-}
-
-struct Compute {
-    position_buffer_in: wgpu::Buffer,
-    position_buffer_out: wgpu::Buffer,
-    velocity_buffer: wgpu::Buffer,
-    buffer_size: wgpu::BufferAddress,
-    uniform_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-    pipeline: wgpu::ComputePipeline,
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy, Uniform)]
-pub struct Uniforms {
-    particle_count: uint,
-    width: float,
-    height: float,
-    speed: float,
-    attraction_strength: float,
-    repulsion_strength: float,
-    attraction_range: float,
-    repulsion_range: float,
-    center_strength: float,
-    particle_radius: float,
-    collision_response: float,
-    momentum: float,
-    max_acceleration: float,
-    max_velocity: float,
+    particle_system: GPUParticleSystem,
+    uniforms: uniforms::UniformBuffer,
 }
 
 const WIDTH: u32 = 1920;
@@ -60,128 +35,48 @@ fn model(app: &App) -> Model {
     let window = app.window(window_id).unwrap();
     let device = window.swap_chain_device();
 
-    // The vector that we will write particle values to.
-    let mut positions = vec![];
-    let mut velocities = vec![];
-
-    let max_radius = WIDTH as f32 * 0.1;
-    for _ in 0..PARTICLE_COUNT {
-        let position_angle =
-            rand::thread_rng().gen_range(-std::f32::consts::PI, std::f32::consts::PI);
-        let position_radius = rand::thread_rng().gen_range(0.0, max_radius);
-        let position_x = position_radius * position_angle.cos();
-        let position_y = position_radius * position_angle.sin();
-        let position = pt2(position_x, position_y);
-        positions.push(position);
-
-        let velocity_x = rand::thread_rng().gen_range(-1.0, 1.0);
-        let velocity_y = rand::thread_rng().gen_range(-1.0, 1.0);
-        velocities.push(pt2(velocity_x, velocity_y));
-    }
-
-    let position_bytes = vectors_as_byte_vec(&positions);
-    let velocity_bytes = vectors_as_byte_vec(&velocities);
-
-    // Create the buffers that will store the result of our compute operation.
-    let buffer_size =
-        (PARTICLE_COUNT as usize * std::mem::size_of::<Vec2>()) as wgpu::BufferAddress;
-
-    let position_buffer_in = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-        label: Some("particle-positions-in"),
-        contents: &position_bytes[..],
-        usage: wgpu::BufferUsage::STORAGE
-            | wgpu::BufferUsage::COPY_DST
-            | wgpu::BufferUsage::COPY_SRC,
-    });
-
-    let position_buffer_out = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-        label: Some("particle-positions-out"),
-        contents: &position_bytes[..],
-        usage: wgpu::BufferUsage::STORAGE
-            | wgpu::BufferUsage::COPY_DST
-            | wgpu::BufferUsage::COPY_SRC,
-    });
-
-    let velocity_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-        label: Some("particle-velocities"),
-        contents: &velocity_bytes[..],
-        usage: wgpu::BufferUsage::STORAGE
-            | wgpu::BufferUsage::COPY_DST
-            | wgpu::BufferUsage::COPY_SRC,
-    });
+    let particle_system =
+        particles::GPUParticleSystem::new(device, PARTICLE_COUNT, WIDTH as f32 * 0.1);
 
     // Create the buffer that will store the uniforms.
-    let uniforms = create_uniforms();
-    println!("uniforms: {:?}", uniforms);
-    let std140_uniforms = uniforms.std140();
-    let uniforms_bytes = std140_uniforms.as_raw();
-    let usage = wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST;
-    let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("uniform-buffer"),
-        contents: uniforms_bytes,
-        usage,
-    });
+    let uniforms =
+        uniforms::UniformBuffer::new(&device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
 
     // Create the compute shader module.
-    let cs_mod = wgpu::shader_from_spirv_bytes(device, include_bytes!("shaders/comp.spv"));
+    let update_cs_mod = compile_shader(app, &device, "update.comp", shaderc::ShaderKind::Compute);
 
-    // Create the bind group and pipeline.
-    let bind_group_layout = create_bind_group_layout(device);
-    let bind_group = create_bind_group(
+    let compute = compute::Compute::new::<uniforms::Uniforms>(
         device,
-        &bind_group_layout,
-        &position_buffer_in,
-        &position_buffer_out,
-        &velocity_buffer,
-        buffer_size,
-        &uniform_buffer,
-    );
-    let pipeline_layout = create_pipeline_layout(device, &bind_group_layout);
-    let pipeline = create_compute_pipeline(device, &pipeline_layout, &cs_mod);
-
-    let compute = Compute {
-        position_buffer_in,
-        position_buffer_out,
-        velocity_buffer,
-        buffer_size,
-        uniform_buffer,
-        bind_group,
-        pipeline,
-    };
+        Some(particle_system.buffers()),
+        Some(particle_system.buffer_sizes()),
+        Some(&uniforms.buffer),
+        &update_cs_mod,
+    )
+    .unwrap();
 
     // Create a thread pool capable of running our GPU buffer read futures.
     let threadpool = futures::executor::ThreadPool::new().unwrap();
+    let positions = particle_system.initial_positions.clone();
 
     Model {
         compute,
-        uniforms,
         positions: Arc::new(Mutex::new(positions)),
         threadpool,
+        particle_system,
+        uniforms,
     }
 }
 
 fn update(app: &App, model: &mut Model, _update: Update) {
     let window = app.main_window();
     let device = window.swap_chain_device();
-    let compute = &mut model.compute;
 
     // create a buffer for reading the particle positions
     let read_position_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("read-positions"),
-        size: compute.buffer_size,
+        size: model.particle_system.buffer_size,
         usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
         mapped_at_creation: false,
-    });
-
-    // An update for the uniform buffer with the current time.
-    let std140_uniforms = model.uniforms.std140();
-    let uniforms_bytes = std140_uniforms.as_raw();
-    let uniforms_size = uniforms_bytes.len();
-    let usage = wgpu::BufferUsage::COPY_SRC;
-    let new_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("uniform-data-transfer"),
-        contents: uniforms_bytes,
-        usage,
     });
 
     // The encoder we'll use to encode the compute pass.
@@ -190,38 +85,20 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     };
     let mut encoder = device.create_command_encoder(&desc);
 
-    encoder.copy_buffer_to_buffer(
-        &new_uniform_buffer,
-        0,
-        &compute.uniform_buffer,
-        0,
-        uniforms_size as u64,
-    );
+    // model.uniforms.update(device, &mut encoder);
 
-    {
-        let pass_desc = wgpu::ComputePassDescriptor {
-            label: Some("compute-pass"),
-        };
-        let mut cpass = encoder.begin_compute_pass(&pass_desc);
-        cpass.set_pipeline(&compute.pipeline);
-        cpass.set_bind_group(0, &compute.bind_group, &[]);
-        cpass.dispatch(PARTICLE_COUNT, 1, 1);
-    }
+    model.compute.compute(&mut encoder, PARTICLE_COUNT);
+
+    model
+        .particle_system
+        .copy_positions_from_out_to_in(&mut encoder);
 
     encoder.copy_buffer_to_buffer(
-        &compute.position_buffer_out,
-        0,
-        &compute.position_buffer_in,
-        0,
-        compute.buffer_size,
-    );
-
-    encoder.copy_buffer_to_buffer(
-        &compute.position_buffer_out,
+        &model.particle_system.position_buffer_out,
         0,
         &read_position_buffer,
         0,
-        compute.buffer_size,
+        model.particle_system.buffer_size,
     );
 
     // Submit the compute pass to the device's queue.
@@ -256,7 +133,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     if let Ok(positions) = model.positions.lock() {
         for &p in positions.iter() {
             draw.ellipse()
-                .radius(model.uniforms.particle_radius)
+                .radius(model.uniforms.data.particle_radius)
                 .color(WHITE)
                 .x_y(p.x, p.y);
         }
@@ -265,101 +142,26 @@ fn view(app: &App, model: &Model, frame: Frame) {
     draw.to_frame(app, &frame).unwrap();
 }
 
-fn create_uniforms() -> Uniforms {
-    Uniforms {
-        particle_count: PARTICLE_COUNT,
-        width: WIDTH as f32,
-        height: HEIGHT as f32,
-        speed: 1.0,
-        attraction_strength: 2.0,
-        repulsion_strength: 2.0,
-        attraction_range: 10.0, // 0.045,
-        repulsion_range: 120.0, // 1.2,
-        center_strength: 0.0001,
-        particle_radius: 2.0,
-        collision_response: 0.1,
-        momentum: 0.86,
-        max_acceleration: 0.0,
-        max_velocity: 1.0,
-    }
-}
-
-pub fn float_as_bytes(data: &f32) -> &[u8] {
-    unsafe { wgpu::bytes::from(data) }
-}
-
-pub fn vectors_as_byte_vec(data: &[Vec2]) -> Vec<u8> {
-    let mut bytes = vec![];
-    data.iter().for_each(|v| {
-        bytes.extend(float_as_bytes(&v.x));
-        bytes.extend(float_as_bytes(&v.y));
-    });
-    bytes
-}
-
-fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    let storage_dynamic = false;
-    let storage_readonly = false;
-    let uniform_dynamic = false;
-    wgpu::BindGroupLayoutBuilder::new()
-        .storage_buffer(
-            wgpu::ShaderStage::COMPUTE,
-            storage_dynamic,
-            storage_readonly,
-        )
-        .storage_buffer(
-            wgpu::ShaderStage::COMPUTE,
-            storage_dynamic,
-            storage_readonly,
-        )
-        .storage_buffer(
-            wgpu::ShaderStage::COMPUTE,
-            storage_dynamic,
-            storage_readonly,
-        )
-        .uniform_buffer(wgpu::ShaderStage::COMPUTE, uniform_dynamic)
-        .build(device)
-}
-
-fn create_bind_group(
+/// Compiles a shader from the shaders directory
+fn compile_shader(
+    app: &App,
     device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    position_buffer_in: &wgpu::Buffer,
-    position_buffer_out: &wgpu::Buffer,
-    velocity_buffer: &wgpu::Buffer,
-    buffer_size: wgpu::BufferAddress,
-    uniform_buffer: &wgpu::Buffer,
-) -> wgpu::BindGroup {
-    let buffer_size_bytes = std::num::NonZeroU64::new(buffer_size).unwrap();
-    wgpu::BindGroupBuilder::new()
-        .buffer_bytes(position_buffer_in, 0, Some(buffer_size_bytes))
-        .buffer_bytes(position_buffer_out, 0, Some(buffer_size_bytes))
-        .buffer_bytes(velocity_buffer, 0, Some(buffer_size_bytes))
-        .buffer::<Uniforms>(uniform_buffer, 0..1)
-        .build(device, layout)
-}
-
-fn create_pipeline_layout(
-    device: &wgpu::Device,
-    bind_group_layout: &wgpu::BindGroupLayout,
-) -> wgpu::PipelineLayout {
-    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("nannou"),
-        bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
-    })
-}
-
-fn create_compute_pipeline(
-    device: &wgpu::Device,
-    layout: &wgpu::PipelineLayout,
-    cs_mod: &wgpu::ShaderModule,
-) -> wgpu::ComputePipeline {
-    let desc = wgpu::ComputePipelineDescriptor {
-        label: Some("nannou"),
-        layout: Some(layout),
-        module: &cs_mod,
-        entry_point: "main",
-    };
-    device.create_compute_pipeline(&desc)
+    filename: &str,
+    kind: shaderc::ShaderKind,
+) -> wgpu::ShaderModule {
+    let path = app
+        .project_path()
+        .unwrap()
+        .join("src")
+        .join("shaders")
+        .join(filename)
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    let code = fs::read_to_string(path).unwrap();
+    let mut compiler = shaderc::Compiler::new().unwrap();
+    let spirv = compiler
+        .compile_into_spirv(code.as_str(), kind, filename, "main", None)
+        .unwrap();
+    wgpu::shader_from_spirv_bytes(device, spirv.as_binary_u8())
 }
