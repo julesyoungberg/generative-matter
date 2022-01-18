@@ -1,0 +1,31 @@
+#version 450
+
+precision highp int;
+precision mediump float;
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer BinBuffer { uint[] bin_counts; };
+
+layout(set = 0, binding = 1) buffer PrefixBuffer { uint[] prefix_sums; };
+
+layout(set = 0, binding = 2) uniform Uniforms {
+    uint particle_count;
+    float width;
+    float height;
+    float speed;
+    float attraction_strength;
+    float repulsion_strength;
+    float attraction_range;
+    float repulsion_range;
+    float center_strength;
+    float particle_radius;
+    float collision_response;
+    float momentum;
+    float max_acceleration;
+    float max_velocity;
+    float bin_size;
+};
+
+// Perform the scan portion of the radix sort algorithm.
+void main() {}

@@ -1,19 +1,21 @@
-use std::fs;
 use std::sync::{Arc, Mutex};
 
 use nannou::prelude::*;
-use particles::GPUParticleSystem;
+use particles::ParticleSystem;
 
 // mod capture;
 mod compute;
 mod particles;
 mod uniforms;
+mod util;
+
+use crate::util::*;
 
 struct Model {
     compute: compute::Compute,
     positions: Arc<Mutex<Vec<Vec2>>>,
     threadpool: futures::executor::ThreadPool,
-    particle_system: GPUParticleSystem,
+    particle_system: ParticleSystem,
     uniforms: uniforms::UniformBuffer,
 }
 
@@ -36,14 +38,14 @@ fn model(app: &App) -> Model {
     let device = window.swap_chain_device();
 
     let particle_system =
-        particles::GPUParticleSystem::new(device, PARTICLE_COUNT, WIDTH as f32 * 0.1);
+        particles::ParticleSystem::new(device, PARTICLE_COUNT, WIDTH as f32 * 0.1);
 
     // Create the buffer that will store the uniforms.
     let uniforms =
         uniforms::UniformBuffer::new(&device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
 
     // Create the compute shader module.
-    let update_cs_mod = compile_shader(app, &device, "update.comp", shaderc::ShaderKind::Compute);
+    let update_cs_mod = compile_shader(app, device, "update.comp", shaderc::ShaderKind::Compute);
 
     let compute = compute::Compute::new::<uniforms::Uniforms>(
         device,
@@ -140,28 +142,4 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     draw.to_frame(app, &frame).unwrap();
-}
-
-/// Compiles a shader from the shaders directory
-fn compile_shader(
-    app: &App,
-    device: &wgpu::Device,
-    filename: &str,
-    kind: shaderc::ShaderKind,
-) -> wgpu::ShaderModule {
-    let path = app
-        .project_path()
-        .unwrap()
-        .join("src")
-        .join("shaders")
-        .join(filename)
-        .into_os_string()
-        .into_string()
-        .unwrap();
-    let code = fs::read_to_string(path).unwrap();
-    let mut compiler = shaderc::Compiler::new().unwrap();
-    let spirv = compiler
-        .compile_into_spirv(code.as_str(), kind, filename, "main", None)
-        .unwrap();
-    wgpu::shader_from_spirv_bytes(device, spirv.as_binary_u8())
 }

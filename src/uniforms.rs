@@ -19,6 +19,7 @@ pub struct Uniforms {
     pub momentum: float,
     pub max_acceleration: float,
     pub max_velocity: float,
+    pub bin_size: float,
 }
 
 impl Uniforms {
@@ -38,6 +39,7 @@ impl Uniforms {
             momentum: 0.86,
             max_acceleration: 0.0,
             max_velocity: 1.0,
+            bin_size: 2.0,
         }
     }
 }

@@ -2,7 +2,7 @@ use nannou::prelude::*;
 use rand;
 use rand::Rng;
 
-pub struct GPUParticleSystem {
+pub struct ParticleSystem {
     pub position_buffer_in: wgpu::Buffer,
     pub position_buffer_out: wgpu::Buffer,
     pub velocity_buffer: wgpu::Buffer,
@@ -10,7 +10,7 @@ pub struct GPUParticleSystem {
     pub initial_positions: Vec<Point2>,
 }
 
-impl GPUParticleSystem {
+impl ParticleSystem {
     pub fn new(device: &wgpu::Device, num_particles: u32, max_radius: f32) -> Self {
         let mut positions = vec![];
         let mut velocities = vec![];
