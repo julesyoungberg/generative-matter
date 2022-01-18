@@ -13,6 +13,8 @@ pub struct RadixSort {
     buffer_size: wgpu::BufferAddress,
     bin_count_buffer: wgpu::Buffer,
     prefix_sum_buffer: wgpu::Buffer,
+    num_bins: u32,
+    particle_count: u32,
 }
 
 /// Implements the radix sort algorithm on the GPU with compute shaders
@@ -104,6 +106,14 @@ impl RadixSort {
             buffer_size,
             bin_count_buffer,
             prefix_sum_buffer,
+            num_bins,
+            particle_count: uniforms.data.particle_count,
         }
+    }
+
+    pub fn update(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.count.compute(encoder, self.particle_count);
+        self.scan.compute(encoder, self.num_bins);
+        self.reorder.compute(encoder, self.particle_count);
     }
 }

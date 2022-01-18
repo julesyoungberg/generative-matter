@@ -15,6 +15,7 @@ struct Model {
     threadpool: futures::executor::ThreadPool,
     particle_system: ParticleSystem,
     uniforms: uniforms::UniformBuffer,
+    radix_sort: radix_sort::RadixSort,
 }
 
 const WIDTH: u32 = 1920;
@@ -42,6 +43,8 @@ fn model(app: &App) -> Model {
     let particle_system =
         particles::ParticleSystem::new(app, device, &uniforms, WIDTH as f32 * 0.1);
 
+    let radix_sort = radix_sort::RadixSort::new(app, device, &particle_system, &uniforms);
+
     // Create a thread pool capable of running our GPU buffer read futures.
     let threadpool = futures::executor::ThreadPool::new().unwrap();
     let positions = particle_system.initial_positions.clone();
@@ -51,6 +54,7 @@ fn model(app: &App) -> Model {
         threadpool,
         particle_system,
         uniforms,
+        radix_sort,
     }
 }
 
@@ -74,14 +78,9 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     // model.uniforms.update(device, &mut encoder);
 
-    model
-        .particle_system
-        .compute
-        .compute(&mut encoder, PARTICLE_COUNT);
+    model.radix_sort.update(&mut encoder);
 
-    model
-        .particle_system
-        .copy_positions_from_out_to_in(&mut encoder);
+    model.particle_system.update(&mut encoder);
 
     encoder.copy_buffer_to_buffer(
         &model.particle_system.position_buffer_out,

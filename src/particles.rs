@@ -1,4 +1,5 @@
 use nannou::prelude::*;
+use nannou::wgpu::CommandEncoder;
 use rand;
 use rand::Rng;
 
@@ -13,6 +14,7 @@ pub struct ParticleSystem {
     pub buffer_size: u64,
     pub initial_positions: Vec<Point2>,
     pub compute: Compute,
+    pub particle_count: u32,
 }
 
 impl ParticleSystem {
@@ -93,10 +95,11 @@ impl ParticleSystem {
             buffer_size,
             initial_positions: positions,
             compute,
+            particle_count: uniforms.data.particle_count,
         }
     }
 
-    pub fn copy_positions_from_out_to_in(&self, encoder: &mut wgpu::CommandEncoder) {
+    fn copy_positions_from_out_to_in(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.copy_buffer_to_buffer(
             &self.position_buffer_out,
             0,
@@ -104,6 +107,11 @@ impl ParticleSystem {
             0,
             self.buffer_size,
         );
+    }
+
+    pub fn update(&self, encoder: &mut CommandEncoder) {
+        self.compute.compute(encoder, self.particle_count);
+        self.copy_positions_from_out_to_in(encoder);
     }
 }
 
