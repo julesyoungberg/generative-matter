@@ -6,13 +6,11 @@ use particles::ParticleSystem;
 // mod capture;
 mod compute;
 mod particles;
+mod radix_sort;
 mod uniforms;
 mod util;
 
-use crate::util::*;
-
 struct Model {
-    compute: compute::Compute,
     positions: Arc<Mutex<Vec<Vec2>>>,
     threadpool: futures::executor::ThreadPool,
     particle_system: ParticleSystem,
@@ -37,31 +35,18 @@ fn model(app: &App) -> Model {
     let window = app.window(window_id).unwrap();
     let device = window.swap_chain_device();
 
-    let particle_system =
-        particles::ParticleSystem::new(device, PARTICLE_COUNT, WIDTH as f32 * 0.1);
-
     // Create the buffer that will store the uniforms.
     let uniforms =
-        uniforms::UniformBuffer::new(&device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
+        uniforms::UniformBuffer::new(device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
 
-    // Create the compute shader module.
-    let update_cs_mod = compile_shader(app, device, "update.comp", shaderc::ShaderKind::Compute);
-
-    let compute = compute::Compute::new::<uniforms::Uniforms>(
-        device,
-        Some(particle_system.buffers()),
-        Some(particle_system.buffer_sizes()),
-        Some(&uniforms.buffer),
-        &update_cs_mod,
-    )
-    .unwrap();
+    let particle_system =
+        particles::ParticleSystem::new(app, device, &uniforms, WIDTH as f32 * 0.1);
 
     // Create a thread pool capable of running our GPU buffer read futures.
     let threadpool = futures::executor::ThreadPool::new().unwrap();
     let positions = particle_system.initial_positions.clone();
 
     Model {
-        compute,
         positions: Arc::new(Mutex::new(positions)),
         threadpool,
         particle_system,
@@ -89,7 +74,10 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     // model.uniforms.update(device, &mut encoder);
 
-    model.compute.compute(&mut encoder, PARTICLE_COUNT);
+    model
+        .particle_system
+        .compute
+        .compute(&mut encoder, PARTICLE_COUNT);
 
     model
         .particle_system

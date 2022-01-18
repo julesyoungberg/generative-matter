@@ -2,20 +2,30 @@ use nannou::prelude::*;
 use rand;
 use rand::Rng;
 
+use crate::compute::*;
+use crate::uniforms::*;
+use crate::util::*;
+
 pub struct ParticleSystem {
     pub position_buffer_in: wgpu::Buffer,
     pub position_buffer_out: wgpu::Buffer,
     pub velocity_buffer: wgpu::Buffer,
     pub buffer_size: u64,
     pub initial_positions: Vec<Point2>,
+    pub compute: Compute,
 }
 
 impl ParticleSystem {
-    pub fn new(device: &wgpu::Device, num_particles: u32, max_radius: f32) -> Self {
+    pub fn new(
+        app: &App,
+        device: &wgpu::Device,
+        uniforms: &UniformBuffer,
+        max_radius: f32,
+    ) -> Self {
         let mut positions = vec![];
         let mut velocities = vec![];
 
-        for _ in 0..num_particles {
+        for _ in 0..uniforms.data.particle_count {
             let position_angle =
                 rand::thread_rng().gen_range(-std::f32::consts::PI, std::f32::consts::PI);
             let position_radius = rand::thread_rng().gen_range(0.0, max_radius);
@@ -33,8 +43,8 @@ impl ParticleSystem {
         let velocity_bytes = vectors_as_byte_vec(&velocities);
 
         // Create the buffers that will store the result of our compute operation.
-        let buffer_size =
-            (num_particles as usize * std::mem::size_of::<Vec2>()) as wgpu::BufferAddress;
+        let buffer_size = (uniforms.data.particle_count as usize * std::mem::size_of::<Vec2>())
+            as wgpu::BufferAddress;
 
         let position_buffer_in = device.create_buffer_init(&wgpu::BufferInitDescriptor {
             label: Some("particle-positions-in"),
@@ -60,25 +70,30 @@ impl ParticleSystem {
                 | wgpu::BufferUsage::COPY_SRC,
         });
 
+        // Create the compute shader module.
+        let update_cs_mod =
+            compile_shader(app, device, "update.comp", shaderc::ShaderKind::Compute);
+
+        let buffers = vec![&position_buffer_in, &position_buffer_out, &velocity_buffer];
+        let buffer_sizes = vec![buffer_size, buffer_size, buffer_size];
+
+        let compute = Compute::new::<Uniforms>(
+            device,
+            Some(buffers),
+            Some(buffer_sizes),
+            Some(&uniforms.buffer),
+            &update_cs_mod,
+        )
+        .unwrap();
+
         Self {
             position_buffer_in,
             position_buffer_out,
             velocity_buffer,
             buffer_size,
             initial_positions: positions,
+            compute,
         }
-    }
-
-    pub fn buffers(&self) -> Vec<&wgpu::Buffer> {
-        vec![
-            &self.position_buffer_in,
-            &self.position_buffer_out,
-            &self.velocity_buffer,
-        ]
-    }
-
-    pub fn buffer_sizes(&self) -> Vec<u64> {
-        vec![self.buffer_size, self.buffer_size, self.buffer_size]
     }
 
     pub fn copy_positions_from_out_to_in(&self, encoder: &mut wgpu::CommandEncoder) {

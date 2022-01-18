@@ -21,7 +21,7 @@ impl RadixSort {
         app: &App,
         device: &wgpu::Device,
         particle_system: &ParticleSystem,
-        uniforms: &Uniforms,
+        uniforms: &UniformBuffer,
     ) -> Self {
         let count_cs_mod = compile_shader(app, device, "count.comp", shaderc::ShaderKind::Compute);
 
@@ -36,7 +36,7 @@ impl RadixSort {
 
         let buffer_size = (num_bins as usize * std::mem::size_of::<uint>()) as wgpu::BufferAddress;
 
-        let zeros = vec![0_u8; num_bins * 4];
+        let zeros = vec![0_u8; num_bins as usize * 4];
 
         let bin_count_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
             label: Some("radix-sort-bin-count"),
@@ -55,24 +55,26 @@ impl RadixSort {
         });
 
         let count_buffers = vec![&particle_system.position_buffer_out, &bin_count_buffer];
-        let count_buffer_sizes = vec![&particle_system.buffer_size, &buffer_size];
+        let count_buffer_sizes = vec![particle_system.buffer_size, buffer_size];
         let count = Compute::new::<Uniforms>(
             device,
             Some(count_buffers),
             Some(count_buffer_sizes),
             Some(&uniforms.buffer),
             &count_cs_mod,
-        );
+        )
+        .unwrap();
 
         let scan_buffers = vec![&bin_count_buffer, &prefix_sum_buffer];
-        let scan_buffer_sizes = vec![&buffer_size, &buffer_size];
+        let scan_buffer_sizes = vec![buffer_size, buffer_size];
         let scan = Compute::new::<Uniforms>(
             device,
             Some(scan_buffers),
             Some(scan_buffer_sizes),
             Some(&uniforms.buffer),
-            &count_cs_mod,
-        );
+            &scan_cs_mod,
+        )
+        .unwrap();
 
         let reorder_buffers = vec![
             &particle_system.position_buffer_out,
@@ -81,10 +83,10 @@ impl RadixSort {
             &bin_count_buffer,
         ];
         let reorder_buffer_sizes = vec![
-            &particle_system.buffer_size,
-            &particle_system.buffer_size,
-            &buffer_size,
-            &buffer_size,
+            particle_system.buffer_size,
+            particle_system.buffer_size,
+            buffer_size,
+            buffer_size,
         ];
         let reorder = Compute::new::<Uniforms>(
             device,
@@ -92,7 +94,8 @@ impl RadixSort {
             Some(reorder_buffer_sizes),
             Some(&uniforms.buffer),
             &reorder_cs_mod,
-        );
+        )
+        .unwrap();
 
         Self {
             count,
