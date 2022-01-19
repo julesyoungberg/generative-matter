@@ -20,10 +20,16 @@ pub struct Uniforms {
     pub max_acceleration: float,
     pub max_velocity: float,
     pub bin_size: float,
+    pub num_bins: uint,
 }
 
 impl Uniforms {
     pub fn new(particle_count: uint, width: float, height: float) -> Self {
+        let bin_size = 2.0;
+        let bin_rows = (height / bin_size).ceil() as u32;
+        let bin_cols = (width / bin_size).ceil() as u32;
+        let num_bins = bin_rows * bin_cols;
+
         Uniforms {
             particle_count,
             width,
@@ -40,6 +46,7 @@ impl Uniforms {
             max_acceleration: 0.0,
             max_velocity: 1.0,
             bin_size: 2.0,
+            num_bins,
         }
     }
 }

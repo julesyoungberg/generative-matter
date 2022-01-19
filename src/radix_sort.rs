@@ -32,13 +32,10 @@ impl RadixSort {
         let reorder_cs_mod =
             compile_shader(app, device, "reorder.comp", shaderc::ShaderKind::Compute);
 
-        let bin_rows = (uniforms.data.height / uniforms.data.bin_size).ceil() as u32;
-        let bin_cols = (uniforms.data.width / uniforms.data.bin_size).ceil() as u32;
-        let num_bins = bin_rows * bin_cols;
+        let buffer_size =
+            (uniforms.data.num_bins as usize * std::mem::size_of::<uint>()) as wgpu::BufferAddress;
 
-        let buffer_size = (num_bins as usize * std::mem::size_of::<uint>()) as wgpu::BufferAddress;
-
-        let zeros = vec![0_u8; num_bins as usize * 4];
+        let zeros = vec![0_u8; uniforms.data.num_bins as usize * 4];
 
         let bin_count_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
             label: Some("radix-sort-bin-count"),
@@ -106,7 +103,7 @@ impl RadixSort {
             buffer_size,
             bin_count_buffer,
             prefix_sum_buffer,
-            num_bins,
+            num_bins: uniforms.data.num_bins,
             particle_count: uniforms.data.particle_count,
         }
     }

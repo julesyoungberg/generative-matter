@@ -25,6 +25,7 @@ layout(set = 0, binding = 2) uniform Uniforms {
     float max_acceleration;
     float max_velocity;
     float bin_size;
+    uint num_bins;
 };
 
 // Perform the initial bin count step of the radix sort algorithm.
