@@ -3,10 +3,12 @@ use std::sync::{Arc, Mutex};
 use nannou::prelude::*;
 use particles::ParticleSystem;
 
-// mod capture;
+mod capture;
 mod compute;
+mod geometry;
 mod particles;
 mod radix_sort;
+mod render;
 mod uniforms;
 mod util;
 

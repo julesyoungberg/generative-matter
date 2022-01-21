@@ -53,7 +53,7 @@ impl RadixSort {
                 | wgpu::BufferUsage::COPY_SRC,
         });
 
-        let count_buffers = vec![&particle_system.position_buffer_out, &bin_count_buffer];
+        let count_buffers = vec![&particle_system.position_buffer_out, &prefix_sum_buffer];
         let count_buffer_sizes = vec![particle_system.buffer_size, buffer_size];
         let count = Compute::new::<Uniforms>(
             device,
@@ -64,8 +64,8 @@ impl RadixSort {
         )
         .unwrap();
 
-        let scan_buffers = vec![&bin_count_buffer, &prefix_sum_buffer];
-        let scan_buffer_sizes = vec![buffer_size, buffer_size];
+        let scan_buffers = vec![&prefix_sum_buffer];
+        let scan_buffer_sizes = vec![buffer_size];
         let scan = Compute::new::<Uniforms>(
             device,
             Some(scan_buffers),
