@@ -18,6 +18,7 @@ struct Model {
     particle_system: ParticleSystem,
     uniforms: uniforms::UniformBuffer,
     radix_sort: radix_sort::RadixSort,
+    frame_capturer: capture::FrameCapturer,
 }
 
 const WIDTH: u32 = 1920;
@@ -51,12 +52,15 @@ fn model(app: &App) -> Model {
     let threadpool = futures::executor::ThreadPool::new().unwrap();
     let positions = particle_system.initial_positions.clone();
 
+    let frame_capturer = capture::FrameCapturer::new(app);
+
     Model {
         positions: Arc::new(Mutex::new(positions)),
         threadpool,
         particle_system,
         uniforms,
         radix_sort,
+        frame_capturer,
     }
 }
 
@@ -92,8 +96,14 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         model.particle_system.buffer_size,
     );
 
+    // model
+    //     .frame_capturer
+    //     .take_snapshot(device, &mut encoder, &model.uniform_texture);
+
     // Submit the compute pass to the device's queue.
     window.swap_chain_queue().submit(Some(encoder.finish()));
+
+    // model.frame_capturer.save_frame(app);
 
     // Spawn a future that reads the result of the compute pass.
     let positions = model.positions.clone();
