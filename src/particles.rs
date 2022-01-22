@@ -90,8 +90,19 @@ impl ParticleSystem {
         }
     }
 
+    fn copy_positions_out_to_in(&self, encoder: &mut CommandEncoder) {
+        encoder.copy_buffer_to_buffer(
+            &self.position_out_buffer,
+            0,
+            &self.position_in_buffer,
+            0,
+            self.buffer_size,
+        );
+    }
+
     pub fn update(&self, encoder: &mut CommandEncoder) {
         self.compute.compute(encoder, self.particle_count);
+        self.copy_positions_out_to_in(encoder);
     }
 }
 

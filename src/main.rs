@@ -93,7 +93,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     // model.uniforms.update(device, &mut encoder);
 
-    model.radix_sort.update(&mut encoder);
+    // model.radix_sort.update(&mut encoder);
 
     model.particle_system.update(&mut encoder);
 
