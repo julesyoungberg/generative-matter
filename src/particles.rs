@@ -8,8 +8,8 @@ use crate::uniforms::*;
 use crate::util::*;
 
 pub struct ParticleSystem {
-    pub position_buffer_in: wgpu::Buffer,
-    pub position_buffer_out: wgpu::Buffer,
+    pub position_in_buffer: wgpu::Buffer,
+    pub position_out_buffer: wgpu::Buffer,
     pub velocity_buffer: wgpu::Buffer,
     pub buffer_size: u64,
     pub initial_positions: Vec<Point2>,
@@ -45,38 +45,29 @@ impl ParticleSystem {
         let velocity_bytes = vectors_as_byte_vec(&velocities);
 
         // Create the buffers that will store the result of our compute operation.
-        let buffer_size = (uniforms.data.particle_count as usize * std::mem::size_of::<Vec2>())
+        let buffer_size = (uniforms.data.particle_count as usize * std::mem::size_of::<Point2>())
             as wgpu::BufferAddress;
 
-        let position_buffer_in = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-            label: Some("particle-positions-in"),
-            contents: &position_bytes[..],
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC,
-        });
+        let position_in_buffer = device.create_buffer_with_data(
+            &position_bytes[..],
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        );
 
-        let position_buffer_out = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-            label: Some("particle-positions-out"),
-            contents: &position_bytes[..],
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC,
-        });
+        let position_out_buffer = device.create_buffer_with_data(
+            &position_bytes[..],
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        );
 
-        let velocity_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-            label: Some("particle-velocities"),
-            contents: &velocity_bytes[..],
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC,
-        });
+        let velocity_buffer = device.create_buffer_with_data(
+            &velocity_bytes[..],
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        );
 
         // Create the compute shader module.
         let update_cs_mod =
             compile_shader(app, device, "update.comp", shaderc::ShaderKind::Compute);
 
-        let buffers = vec![&position_buffer_in, &position_buffer_out, &velocity_buffer];
+        let buffers = vec![&position_in_buffer, &position_out_buffer, &velocity_buffer];
         let buffer_sizes = vec![buffer_size, buffer_size, buffer_size];
 
         let compute = Compute::new::<Uniforms>(
@@ -89,8 +80,8 @@ impl ParticleSystem {
         .unwrap();
 
         Self {
-            position_buffer_in,
-            position_buffer_out,
+            position_in_buffer,
+            position_out_buffer,
             velocity_buffer,
             buffer_size,
             initial_positions: positions,
@@ -99,19 +90,8 @@ impl ParticleSystem {
         }
     }
 
-    fn copy_positions_from_out_to_in(&self, encoder: &mut wgpu::CommandEncoder) {
-        encoder.copy_buffer_to_buffer(
-            &self.position_buffer_out,
-            0,
-            &self.position_buffer_in,
-            0,
-            self.buffer_size,
-        );
-    }
-
     pub fn update(&self, encoder: &mut CommandEncoder) {
         self.compute.compute(encoder, self.particle_count);
-        self.copy_positions_from_out_to_in(encoder);
     }
 }
 
@@ -119,7 +99,7 @@ pub fn float_as_bytes(data: &f32) -> &[u8] {
     unsafe { wgpu::bytes::from(data) }
 }
 
-pub fn vectors_as_byte_vec(data: &[Vec2]) -> Vec<u8> {
+pub fn vectors_as_byte_vec(data: &[Point2]) -> Vec<u8> {
     let mut bytes = vec![];
     data.iter().for_each(|v| {
         bytes.extend(float_as_bytes(&v.x));

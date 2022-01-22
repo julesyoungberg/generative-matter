@@ -1,6 +1,4 @@
-use nannou::{prelude::*, wgpu::Textue5cfe74reSnapshot};
-
-type TextureSnapshot = Textue5cfe74reSnapshot;
+use nannou::{prelude::*, wgpu::TextureSnapshot};
 
 pub struct FrameCapturer {
     texture_capturer: wgpu::TextureCapturer,
@@ -46,7 +44,7 @@ impl FrameCapturer {
         if let Some(snapshot) = self.snapshot.take() {
             snapshot
                 .read(move |result| {
-                    let image = result.expect("failed to map texture memory").to_owned();
+                    let image = result.expect("failed to map texture memory");
                     image
                         .save(&path)
                         .expect("failed to save texture to png image");

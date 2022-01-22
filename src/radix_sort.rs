@@ -25,6 +25,8 @@ impl RadixSort {
         particle_system: &ParticleSystem,
         uniforms: &UniformBuffer,
     ) -> Self {
+        println!("compiling shaders");
+
         let count_cs_mod = compile_shader(app, device, "count.comp", shaderc::ShaderKind::Compute);
 
         let scan_cs_mod = compile_shader(app, device, "scan.comp", shaderc::ShaderKind::Compute);
@@ -32,28 +34,28 @@ impl RadixSort {
         let reorder_cs_mod =
             compile_shader(app, device, "reorder.comp", shaderc::ShaderKind::Compute);
 
+        println!("creating buffers");
+
         let buffer_size =
             (uniforms.data.num_bins as usize * std::mem::size_of::<uint>()) as wgpu::BufferAddress;
 
         let zeros = vec![0_u8; uniforms.data.num_bins as usize * 4];
 
-        let bin_count_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-            label: Some("radix-sort-bin-count"),
-            contents: &zeros[..],
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC,
-        });
+        let bin_count_buffer = device.create_buffer_with_data(
+            &zeros[..],
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        );
 
-        let prefix_sum_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
-            label: Some("radix-sort-prefix-sum"),
-            contents: &zeros[..],
-            usage: wgpu::BufferUsage::STORAGE
-                | wgpu::BufferUsage::COPY_DST
-                | wgpu::BufferUsage::COPY_SRC,
-        });
+        let prefix_sum_buffer = device.create_buffer_with_data(
+            &zeros[..],
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        );
 
-        let count_buffers = vec![&particle_system.position_buffer_out, &prefix_sum_buffer];
+        println!("creating computes");
+
+        println!("creating count");
+
+        let count_buffers = vec![&particle_system.position_out_buffer, &prefix_sum_buffer];
         let count_buffer_sizes = vec![particle_system.buffer_size, buffer_size];
         let count = Compute::new::<Uniforms>(
             device,
@@ -62,7 +64,9 @@ impl RadixSort {
             Some(&uniforms.buffer),
             &count_cs_mod,
         )
-        .unwrap();
+        .expect("failed to create count compute instance");
+
+        println!("creating scan");
 
         let scan_buffers = vec![&prefix_sum_buffer];
         let scan_buffer_sizes = vec![buffer_size];
@@ -73,11 +77,13 @@ impl RadixSort {
             Some(&uniforms.buffer),
             &scan_cs_mod,
         )
-        .unwrap();
+        .expect("failed to create scan compute instance");
+
+        println!("creating reorder");
 
         let reorder_buffers = vec![
-            &particle_system.position_buffer_out,
-            &particle_system.position_buffer_in,
+            &particle_system.position_out_buffer,
+            &particle_system.position_in_buffer,
             &prefix_sum_buffer,
             &bin_count_buffer,
         ];
@@ -94,7 +100,7 @@ impl RadixSort {
             Some(&uniforms.buffer),
             &reorder_cs_mod,
         )
-        .unwrap();
+        .expect("failed to create reorder compute instance");
 
         Self {
             count,

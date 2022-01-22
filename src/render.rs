@@ -41,15 +41,17 @@ impl CustomRenderer {
         };
 
         if let Some(textures) = uniform_textures {
+            for t in textures.iter() {
+                bind_group_layout_builder = bind_group_layout_builder.sampled_texture(
+                    wgpu::ShaderStage::FRAGMENT,
+                    true,
+                    wgpu::TextureViewDimension::D2,
+                    t.component_type(),
+                )
+            }
+
             if let Some(views) = texture_views.as_ref() {
                 for v in views {
-                    bind_group_layout_builder = bind_group_layout_builder.texture(
-                        wgpu::ShaderStage::FRAGMENT,
-                        true,
-                        wgpu::TextureViewDimension::D2,
-                        v.sample_type(),
-                    );
-
                     bind_group_builder = bind_group_builder.texture_view(v);
                 }
             }
@@ -57,7 +59,7 @@ impl CustomRenderer {
 
         if let Some(ref s) = sampler {
             bind_group_layout_builder =
-                bind_group_layout_builder.sampler(wgpu::ShaderStage::FRAGMENT, true);
+                bind_group_layout_builder.sampler(wgpu::ShaderStage::FRAGMENT);
 
             bind_group_builder = bind_group_builder.sampler(s);
         }
@@ -97,7 +99,7 @@ impl CustomRenderer {
             .begin(encoder);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, vertex_buffer, 0, 0);
         let vertex_range = 0..VERTICES.len() as u32;
         let instance_range = 0..1;
         render_pass.draw(vertex_range, instance_range);
@@ -113,7 +115,7 @@ pub fn create_app_texture(
     wgpu::TextureBuilder::new()
         .size([width, height])
         .usage(
-            wgpu::TextureUsage::RENDER_ATTACHMENT
+            wgpu::TextureUsage::OUTPUT_ATTACHMENT
                 | wgpu::TextureUsage::SAMPLED
                 | wgpu::TextureUsage::COPY_SRC
                 | wgpu::TextureUsage::COPY_DST,
@@ -130,13 +132,13 @@ fn create_texture_reshaper(
     dst_sample_count: u32,
 ) -> wgpu::TextureReshaper {
     let texture_view = texture.view().build();
-    let texture_sample_type = texture_view.sample_type();
+    let texture_component_type = texture.component_type();
     let dst_format = Frame::TEXTURE_FORMAT;
     wgpu::TextureReshaper::new(
         device,
         &texture_view,
         src_sample_count,
-        texture_sample_type,
+        texture_component_type,
         dst_sample_count,
         dst_format,
     )
@@ -147,9 +149,7 @@ fn create_pipeline_layout(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::PipelineLayout {
     let desc = wgpu::PipelineLayoutDescriptor {
-        label: None,
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
     };
     device.create_pipeline_layout(&desc)
 }
@@ -164,7 +164,7 @@ pub fn create_render_pipeline(
     wgpu::RenderPipelineBuilder::from_layout(layout, vs_mod)
         .fragment_shader(fs_mod)
         .color_format(Frame::TEXTURE_FORMAT)
-        .add_vertex_buffer::<Vertex>(&wgpu::vertex_attr_array![0 => Float32x2])
+        .add_vertex_buffer::<Vertex>(&wgpu::vertex_attr_array![0 => Float2])
         .sample_count(sample_count)
         .primitive_topology(wgpu::PrimitiveTopology::TriangleStrip)
         .build(device)

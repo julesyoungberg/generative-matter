@@ -63,11 +63,7 @@ impl UniformBuffer {
         let std140_uniforms = data.std140();
         let uniforms_bytes = std140_uniforms.as_raw();
         let usage = wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST;
-        let buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("uniform-buffer"),
-            contents: uniforms_bytes,
-            usage,
-        });
+        let buffer = device.create_buffer_with_data(uniforms_bytes, usage);
 
         Self { data, buffer }
     }
@@ -78,11 +74,7 @@ impl UniformBuffer {
         let uniforms_bytes = std140_uniforms.as_raw();
         let uniforms_size = uniforms_bytes.len();
         let usage = wgpu::BufferUsage::COPY_SRC;
-        let new_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("uniform-data-transfer"),
-            contents: uniforms_bytes,
-            usage,
-        });
+        let new_uniform_buffer = device.create_buffer_with_data(uniforms_bytes, usage);
 
         encoder.copy_buffer_to_buffer(
             &new_uniform_buffer,

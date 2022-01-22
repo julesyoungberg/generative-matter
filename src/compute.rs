@@ -39,7 +39,6 @@ impl Compute {
 
                 for (i, buffer) in b.iter().enumerate() {
                     let buffer_size = s[i];
-                    let buffer_size_bytes = std::num::NonZeroU64::new(buffer_size).unwrap();
 
                     bind_group_layout_builder = bind_group_layout_builder.storage_buffer(
                         wgpu::ShaderStage::COMPUTE,
@@ -47,8 +46,7 @@ impl Compute {
                         storage_readonly,
                     );
 
-                    bind_group_builder =
-                        bind_group_builder.buffer_bytes(buffer, 0, Some(buffer_size_bytes));
+                    bind_group_builder = bind_group_builder.buffer_bytes(buffer, 0..buffer_size);
                 }
             } else {
                 return Err(ComputeError::MissingBufferSizes);
@@ -77,10 +75,7 @@ impl Compute {
     }
 
     pub fn compute(&self, encoder: &mut wgpu::CommandEncoder, num_groups: u32) {
-        let pass_desc = wgpu::ComputePassDescriptor {
-            label: Some("compute-pass"),
-        };
-        let mut cpass = encoder.begin_compute_pass(&pass_desc);
+        let mut cpass = encoder.begin_compute_pass();
         cpass.set_pipeline(&self.pipeline);
         cpass.set_bind_group(0, &self.bind_group, &[]);
         cpass.dispatch(num_groups, 1, 1);
@@ -92,9 +87,7 @@ fn create_pipeline_layout(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::PipelineLayout {
     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("nannou"),
         bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
     })
 }
 
@@ -103,11 +96,13 @@ fn create_compute_pipeline(
     layout: &wgpu::PipelineLayout,
     cs_mod: &wgpu::ShaderModule,
 ) -> wgpu::ComputePipeline {
-    let desc = wgpu::ComputePipelineDescriptor {
-        label: Some("nannou"),
-        layout: Some(layout),
+    let compute_stage = wgpu::ProgrammableStageDescriptor {
         module: &cs_mod,
         entry_point: "main",
+    };
+    let desc = wgpu::ComputePipelineDescriptor {
+        layout,
+        compute_stage,
     };
     device.create_compute_pipeline(&desc)
 }

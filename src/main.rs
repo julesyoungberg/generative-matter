@@ -13,7 +13,7 @@ mod uniforms;
 mod util;
 
 struct Model {
-    positions: Arc<Mutex<Vec<Vec2>>>,
+    positions: Arc<Mutex<Vec<Point2>>>,
     threadpool: futures::executor::ThreadPool,
     particle_system: ParticleSystem,
     uniforms: uniforms::UniformBuffer,
@@ -39,20 +39,30 @@ fn model(app: &App) -> Model {
     let window = app.window(window_id).unwrap();
     let device = window.swap_chain_device();
 
+    println!("creating uniforms");
+
     // Create the buffer that will store the uniforms.
     let uniforms =
         uniforms::UniformBuffer::new(device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
 
+    println!("creating particle system");
+
     let particle_system =
         particles::ParticleSystem::new(app, device, &uniforms, WIDTH as f32 * 0.1);
 
+    println!("creating radix sort");
+
     let radix_sort = radix_sort::RadixSort::new(app, device, &particle_system, &uniforms);
+
+    println!("finalizing reasources");
 
     // Create a thread pool capable of running our GPU buffer read futures.
     let threadpool = futures::executor::ThreadPool::new().unwrap();
     let positions = particle_system.initial_positions.clone();
 
     let frame_capturer = capture::FrameCapturer::new(app);
+
+    println!("creating model");
 
     Model {
         positions: Arc::new(Mutex::new(positions)),
@@ -73,7 +83,6 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         label: Some("read-positions"),
         size: model.particle_system.buffer_size,
         usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
-        mapped_at_creation: false,
     });
 
     // The encoder we'll use to encode the compute pass.
@@ -89,7 +98,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     model.particle_system.update(&mut encoder);
 
     encoder.copy_buffer_to_buffer(
-        &model.particle_system.position_buffer_out,
+        &model.particle_system.position_out_buffer,
         0,
         &read_position_buffer,
         0,
@@ -101,21 +110,22 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     //     .take_snapshot(device, &mut encoder, &model.uniform_texture);
 
     // Submit the compute pass to the device's queue.
-    window.swap_chain_queue().submit(Some(encoder.finish()));
+    window.swap_chain_queue().submit(&[encoder.finish()]);
 
     // model.frame_capturer.save_frame(app);
 
     // Spawn a future that reads the result of the compute pass.
     let positions = model.positions.clone();
+    let buffer_size = model.particle_system.buffer_size;
     let read_positions_future = async move {
-        let slice = read_position_buffer.slice(..);
-        if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
+        let result = read_position_buffer.map_read(0, buffer_size).await;
+        if let Ok(mapping) = result {
             if let Ok(mut positions) = positions.lock() {
-                let bytes = &slice.get_mapped_range()[..];
+                let bytes = &mapping.as_slice();
                 // "Cast" the slice of bytes to a slice of Vec2 as required.
                 let slice = {
-                    let len = bytes.len() / std::mem::size_of::<Vec2>();
-                    let ptr = bytes.as_ptr() as *const Vec2;
+                    let len = bytes.len() / std::mem::size_of::<Point2>();
+                    let ptr = bytes.as_ptr() as *const Point2;
                     unsafe { std::slice::from_raw_parts(ptr, len) }
                 };
 
