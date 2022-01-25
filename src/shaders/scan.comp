@@ -6,7 +6,6 @@ precision mediump float;
 layout(local_size_x = 1) in;
 
 layout(set = 0, binding = 0) buffer BinBuffer { uint[] bins; };
-
 layout(set = 0, binding = 1) uniform Uniforms {
     uint particle_count;
     float width;
@@ -22,60 +21,42 @@ layout(set = 0, binding = 1) uniform Uniforms {
     float momentum;
     float max_acceleration;
     float max_velocity;
-    float bin_size;
-    float num_bins;
+    uint num_bins_x;
+    uint num_bins_y;
+    float bin_size_x;
+    float bin_size_y;
+    uint num_bins;
 };
 
 // Perform the scan portion of the radix sort algorithm.
-// A work efficient parallel scan from
-// https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda
-// https://on-demand.gputechconf.com/gtc/2014/presentations/S4117-fast-fixed-radius-nearest-neighbor-gpu.pdf
+// A non-work efficient parallel scan from
+// https://en.wikipedia.org/wiki/Prefix_sum
 void main() {
     uint bin_index = gl_GlobalInvocationID.x;
+    uint og_val = bins[bin_index];
 
-    // up sweep
+    barrier();
+
     uint D = uint(log2(num_bins));
     for (uint d = 0; d < D; d++) {
-        uint k = uint(pow(2, d + 1));
-        if ((bin_index + 1) % k == 0) {
-            bins[bin_index] += bins[bin_index - uint(pow(2, d))];
-        }
-
-        memoryBarrierBuffer();
-    }
-
-    // down seep
-    if (bin_index == num_bins - 1) {
-        bins[bin_index] = 0;
-    }
-
-    memoryBarrierBuffer();
-
-    for (uint d = D - 1; d >= 0; d--) {
-        uint k = uint(pow(2, d));
+        uint k = uint(pow(2, float(d)));
         uint val = bins[bin_index];
-        uint next_val = 0;
-        uint prev_val = 0;
+        uint other = 0;
 
-        if (bin_index - k >= 0) {
-            prev_val = bins[bin_index - k];
+        if (k <= bin_index) {
+            other = bins[bin_index - k];
         }
 
-        if (bin_index + k < num_bins) {
-            next_val = bins[bin_index + k];
+        barrier();
+
+        if (bin_index >= k) {
+            bins[bin_index] = val + other;
         }
 
-        memoryBarrierBuffer();
-
-        if ((bin_index + 1) % k == 0) {
-            uint k2 = uint(pow(2, d + 1));
-            if ((bin_index + 1) % k2 == 0) {
-                bins[bin_index] = val + prev_val;
-            } else {
-                bins[bin_index] = next_val;
-            }
-        }
-
-        memoryBarrierBuffer();
+        barrier();
     }
+
+    bins[bin_index] -= og_val;
+
+    barrier();
 }

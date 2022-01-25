@@ -10,7 +10,8 @@ use crate::util::*;
 pub struct ParticleSystem {
     pub position_in_buffer: wgpu::Buffer,
     pub position_out_buffer: wgpu::Buffer,
-    pub velocity_buffer: wgpu::Buffer,
+    pub velocity_in_buffer: wgpu::Buffer,
+    pub velocity_out_buffer: wgpu::Buffer,
     pub buffer_size: u64,
     pub initial_positions: Vec<Point2>,
     pub compute: Compute,
@@ -58,7 +59,12 @@ impl ParticleSystem {
             wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         );
 
-        let velocity_buffer = device.create_buffer_with_data(
+        let velocity_in_buffer = device.create_buffer_with_data(
+            &velocity_bytes[..],
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        );
+
+        let velocity_out_buffer = device.create_buffer_with_data(
             &velocity_bytes[..],
             wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         );
@@ -67,8 +73,13 @@ impl ParticleSystem {
         let update_cs_mod =
             compile_shader(app, device, "update.comp", shaderc::ShaderKind::Compute);
 
-        let buffers = vec![&position_in_buffer, &position_out_buffer, &velocity_buffer];
-        let buffer_sizes = vec![buffer_size, buffer_size, buffer_size];
+        let buffers = vec![
+            &position_in_buffer,
+            &position_out_buffer,
+            &velocity_in_buffer,
+            &velocity_out_buffer,
+        ];
+        let buffer_sizes = vec![buffer_size, buffer_size, buffer_size, buffer_size];
 
         let compute = Compute::new::<Uniforms>(
             device,
@@ -82,7 +93,8 @@ impl ParticleSystem {
         Self {
             position_in_buffer,
             position_out_buffer,
-            velocity_buffer,
+            velocity_in_buffer,
+            velocity_out_buffer,
             buffer_size,
             initial_positions: positions,
             compute,
@@ -90,19 +102,8 @@ impl ParticleSystem {
         }
     }
 
-    fn copy_positions_out_to_in(&self, encoder: &mut CommandEncoder) {
-        encoder.copy_buffer_to_buffer(
-            &self.position_out_buffer,
-            0,
-            &self.position_in_buffer,
-            0,
-            self.buffer_size,
-        );
-    }
-
     pub fn update(&self, encoder: &mut CommandEncoder) {
         self.compute.compute(encoder, self.particle_count);
-        self.copy_positions_out_to_in(encoder);
     }
 }
 

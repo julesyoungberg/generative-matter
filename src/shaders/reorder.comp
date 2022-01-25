@@ -6,14 +6,14 @@ precision mediump float;
 layout(local_size_x = 1) in;
 
 layout(set = 0, binding = 0) buffer PositionInBuffer { vec2[] positions_in; };
-
 layout(set = 0, binding = 1) buffer PositionOutBuffer { vec2[] positions_out; };
-
-layout(set = 0, binding = 2) buffer PrefixBuffer { uint[] prefix_sums; };
-
-layout(set = 0, binding = 3) buffer BinCountBuffer { uint[] bin_counts; };
-
-layout(set = 0, binding = 4) uniform Uniforms {
+layout(set = 0, binding = 2) buffer VelocityInBuffer { vec2[] velocities_in; };
+layout(set = 0, binding = 3) buffer VelocityOutBuffer {
+    vec2[] velocities_out;
+};
+layout(set = 0, binding = 4) buffer PrefixBuffer { uint[] prefix_sums; };
+layout(set = 0, binding = 5) buffer BinCountBuffer { uint[] bin_counts; };
+layout(set = 0, binding = 6) uniform Uniforms {
     uint particle_count;
     float width;
     float height;
@@ -28,7 +28,10 @@ layout(set = 0, binding = 4) uniform Uniforms {
     float momentum;
     float max_acceleration;
     float max_velocity;
-    float bin_size;
+    uint num_bins_x;
+    uint num_bins_y;
+    float bin_size_x;
+    float bin_size_y;
     uint num_bins;
 };
 
@@ -42,13 +45,19 @@ void main() {
     position += vec2(width, height) * 0.5;
 
     // get bin index
-    vec2 bin = floor(position / bin_size);
-    uint bin_index = uint(bin.y * ceil(width / bin_size)) + uint(bin.x);
+    ivec2 bin = ivec2(floor(position / vec2(bin_size_x, bin_size_y)));
+    uint bin_index =
+        clamp(uint(bin.y) * num_bins_x + uint(bin.x), 0, num_bins - 1);
 
     // get new particle index
     uint bin_start_index = prefix_sums[bin_index];
+    barrier();
     uint num_before = atomicAdd(bin_counts[bin_index], 1);
+    uint new_index = bin_start_index + num_before;
 
     // output particle to correct position in buffer
-    positions_out[bin_start_index + num_before] = position;
+    positions_out[new_index] = positions_in[index];
+    velocities_out[new_index] = velocities_in[index];
+
+    barrier();
 }

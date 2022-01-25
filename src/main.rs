@@ -5,7 +5,6 @@ use particles::ParticleSystem;
 
 mod capture;
 mod compute;
-mod geometry;
 mod particles;
 mod radix_sort;
 mod render;
@@ -23,7 +22,7 @@ struct Model {
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
-const PARTICLE_COUNT: u32 = 8000;
+const PARTICLE_COUNT: u32 = 3;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -38,12 +37,17 @@ fn model(app: &App) -> Model {
         .unwrap();
     let window = app.window(window_id).unwrap();
     let device = window.swap_chain_device();
+    let sample_count = window.msaa_samples();
 
     println!("creating uniforms");
 
     // Create the buffer that will store the uniforms.
-    let uniforms =
+    let mut uniforms =
         uniforms::UniformBuffer::new(device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
+
+    let bin_config = radix_sort::BinConfig::new(WIDTH as u64, HEIGHT as u64, -9, -10);
+    println!("bin config: {:?}", bin_config);
+    bin_config.update_uniforms(&mut uniforms);
 
     println!("creating particle system");
 
@@ -52,7 +56,8 @@ fn model(app: &App) -> Model {
 
     println!("creating radix sort");
 
-    let radix_sort = radix_sort::RadixSort::new(app, device, &particle_system, &uniforms);
+    let radix_sort =
+        radix_sort::RadixSort::new(app, device, &particle_system, &uniforms, sample_count);
 
     println!("finalizing reasources");
 
@@ -85,6 +90,12 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
     });
 
+    let read_bin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("read-bins"),
+        size: model.radix_sort.buffer_size,
+        usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+    });
+
     // The encoder we'll use to encode the compute pass.
     let desc = wgpu::CommandEncoderDescriptor {
         label: Some("particle-compute"),
@@ -93,16 +104,40 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     // model.uniforms.update(device, &mut encoder);
 
-    // model.radix_sort.update(&mut encoder);
+    model.radix_sort.update(device, &mut encoder);
 
-    model.particle_system.update(&mut encoder);
+    // model.particle_system.update(&mut encoder);
 
     encoder.copy_buffer_to_buffer(
-        &model.particle_system.position_out_buffer,
+        &model.particle_system.position_in_buffer,
         0,
         &read_position_buffer,
         0,
         model.particle_system.buffer_size,
+    );
+
+    encoder.copy_buffer_to_buffer(
+        &model.particle_system.position_in_buffer,
+        0,
+        &model.particle_system.position_out_buffer,
+        0,
+        model.particle_system.buffer_size,
+    );
+
+    encoder.copy_buffer_to_buffer(
+        &model.particle_system.velocity_in_buffer,
+        0,
+        &model.particle_system.velocity_out_buffer,
+        0,
+        model.particle_system.buffer_size,
+    );
+
+    encoder.copy_buffer_to_buffer(
+        &model.radix_sort.prefix_sum_buffer,
+        0,
+        &read_bin_buffer,
+        0,
+        model.radix_sort.buffer_size,
     );
 
     // model
@@ -130,11 +165,30 @@ fn update(app: &App, model: &mut Model, _update: Update) {
                 };
 
                 positions.copy_from_slice(slice);
+                println!("read: {:?}", positions);
             }
         }
     };
 
     model.threadpool.spawn_ok(read_positions_future);
+
+    let bin_buffer_size = model.radix_sort.buffer_size;
+    let read_bins_future = async move {
+        let result = read_bin_buffer.map_read(0, bin_buffer_size).await;
+        if let Ok(mapping) = result {
+            let bytes = &mapping.as_slice();
+            // "Casst" the slice of bytes to a slice of Vec2 as required.
+            let slice = {
+                let len = bytes.len() / std::mem::size_of::<u32>();
+                let ptr = bytes.as_ptr() as *const u32;
+                unsafe { std::slice::from_raw_parts(ptr, len) }
+            };
+
+            println!("bins: {:?}", slice);
+        }
+    };
+
+    model.threadpool.spawn_ok(read_bins_future);
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
@@ -142,6 +196,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
 
     if let Ok(positions) = model.positions.lock() {
+        println!("drawing: {:?}", positions);
         for &p in positions.iter() {
             draw.ellipse()
                 .radius(model.uniforms.data.particle_radius)

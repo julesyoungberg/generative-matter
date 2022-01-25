@@ -5,13 +5,13 @@ precision mediump float;
 
 layout(local_size_x = 1) in;
 
-layout(set = 0, binding = 0) buffer PositionBufferIn { vec2[] positions_in; };
-
-layout(set = 0, binding = 1) buffer PositionBufferOut { vec2[] positions_out; };
-
-layout(set = 0, binding = 2) buffer VelocityBuffer { vec2[] velocities; };
-
-layout(set = 0, binding = 3) uniform Uniforms {
+layout(set = 0, binding = 0) buffer PositionInBuffer { vec2[] positions_in; };
+layout(set = 0, binding = 1) buffer PositionOutBuffer { vec2[] positions_out; };
+layout(set = 0, binding = 2) buffer VelocityInBuffer { vec2[] velocities_in; };
+layout(set = 0, binding = 3) buffer VelocityOutBuffer {
+    vec2[] velocities_out;
+};
+layout(set = 0, binding = 4) uniform Uniforms {
     uint particle_count;
     float width;
     float height;
@@ -26,7 +26,10 @@ layout(set = 0, binding = 3) uniform Uniforms {
     float momentum;
     float max_acceleration;
     float max_velocity;
-    float bin_size;
+    uint num_bins_x;
+    uint num_bins_y;
+    float bin_size_x;
+    float bin_size_y;
     uint num_bins;
 };
 
@@ -34,7 +37,7 @@ void main() {
     // get particle data
     uint index = gl_GlobalInvocationID.x;
     vec2 position = positions_in[index];
-    vec2 velocity = velocities[index];
+    vec2 velocity = velocities_in[index];
     vec2 acceleration = vec2(0.0, 0.0);
 
     float radius2 = particle_radius * 2.0;
@@ -89,6 +92,6 @@ void main() {
     position += velocity * speed;
 
     // update buffers
-    velocities[index] = velocity;
+    velocities_out[index] = velocity;
     positions_out[index] = position;
 }
