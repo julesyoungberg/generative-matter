@@ -51,13 +51,10 @@ void main() {
 
     // get new particle index
     uint bin_start_index = prefix_sums[bin_index];
-    barrier();
     uint num_before = atomicAdd(bin_counts[bin_index], 1);
     uint new_index = bin_start_index + num_before;
 
     // output particle to correct position in buffer
     positions_out[new_index] = positions_in[index];
     velocities_out[new_index] = velocities_in[index];
-
-    barrier();
 }

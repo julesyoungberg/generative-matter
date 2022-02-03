@@ -163,7 +163,7 @@ impl RadixSort {
     }
 
     pub fn update(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) {
-        self.clear_buffers(device, encoder);
+        // self.clear_buffers(device, encoder);
         self.count.compute(encoder, self.particle_count);
         self.scan.compute(encoder, self.num_bins);
         self.reorder.compute(encoder, self.particle_count);

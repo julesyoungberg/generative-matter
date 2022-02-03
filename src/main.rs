@@ -116,21 +116,21 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         model.particle_system.buffer_size,
     );
 
-    encoder.copy_buffer_to_buffer(
-        &model.particle_system.position_in_buffer,
-        0,
-        &model.particle_system.position_out_buffer,
-        0,
-        model.particle_system.buffer_size,
-    );
+    // encoder.copy_buffer_to_buffer(
+    //     &model.particle_system.position_in_buffer,
+    //     0,
+    //     &model.particle_system.position_out_buffer,
+    //     0,
+    //     model.particle_system.buffer_size,
+    // );
 
-    encoder.copy_buffer_to_buffer(
-        &model.particle_system.velocity_in_buffer,
-        0,
-        &model.particle_system.velocity_out_buffer,
-        0,
-        model.particle_system.buffer_size,
-    );
+    // encoder.copy_buffer_to_buffer(
+    //     &model.particle_system.velocity_in_buffer,
+    //     0,
+    //     &model.particle_system.velocity_out_buffer,
+    //     0,
+    //     model.particle_system.buffer_size,
+    // );
 
     encoder.copy_buffer_to_buffer(
         &model.radix_sort.prefix_sum_buffer,
@@ -177,6 +177,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         let result = read_bin_buffer.map_read(0, bin_buffer_size).await;
         if let Ok(mapping) = result {
             let bytes = &mapping.as_slice();
+
             // "Casst" the slice of bytes to a slice of Vec2 as required.
             let slice = {
                 let len = bytes.len() / std::mem::size_of::<u32>();
@@ -196,7 +197,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
 
     if let Ok(positions) = model.positions.lock() {
-        println!("drawing: {:?}", positions);
+        // println!("drawing: {:?}", positions);
         for &p in positions.iter() {
             draw.ellipse()
                 .radius(model.uniforms.data.particle_radius)

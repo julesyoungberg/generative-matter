@@ -57,6 +57,4 @@ void main() {
     }
 
     bins[bin_index] -= og_val;
-
-    barrier();
 }
