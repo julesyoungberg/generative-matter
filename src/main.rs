@@ -16,13 +16,13 @@ struct Model {
     threadpool: futures::executor::ThreadPool,
     particle_system: ParticleSystem,
     uniforms: uniforms::UniformBuffer,
-    radix_sort: radix_sort::RadixSort,
+    // radix_sort: radix_sort::RadixSort,
     frame_capturer: capture::FrameCapturer,
 }
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
-const PARTICLE_COUNT: u32 = 3;
+const PARTICLE_COUNT: u32 = 3000;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -54,10 +54,10 @@ fn model(app: &App) -> Model {
     let particle_system =
         particles::ParticleSystem::new(app, device, &uniforms, WIDTH as f32 * 0.1);
 
-    println!("creating radix sort");
+    // println!("creating radix sort");
 
-    let radix_sort =
-        radix_sort::RadixSort::new(app, device, &particle_system, &uniforms, sample_count);
+    // let radix_sort =
+    //     radix_sort::RadixSort::new(app, device, &particle_system, &uniforms, sample_count);
 
     println!("finalizing reasources");
 
@@ -74,7 +74,7 @@ fn model(app: &App) -> Model {
         threadpool,
         particle_system,
         uniforms,
-        radix_sort,
+        // radix_sort,
         frame_capturer,
     }
 }
@@ -91,55 +91,40 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         mapped_at_creation: false,
     });
 
-    let read_bin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("read-bins"),
-        size: model.radix_sort.buffer_size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
     // The encoder we'll use to encode the compute pass.
     let desc = wgpu::CommandEncoderDescriptor {
         label: Some("particle-compute"),
     };
     let mut encoder = device.create_command_encoder(&desc);
 
-    // model.uniforms.update(device, &mut encoder);
+    model.uniforms.update(device, &mut encoder);
 
-    model.radix_sort.update(device, &mut encoder);
+    // model.radix_sort.update(device, &mut encoder);
 
-    // model.particle_system.update(&mut encoder);
+    model.particle_system.update(&mut encoder);
 
     encoder.copy_buffer_to_buffer(
-        &model.particle_system.position_in_buffer,
+        &model.particle_system.position_out_buffer,
         0,
         &read_position_buffer,
         0,
         model.particle_system.buffer_size,
     );
 
-    // encoder.copy_buffer_to_buffer(
-    //     &model.particle_system.position_in_buffer,
-    //     0,
-    //     &model.particle_system.position_out_buffer,
-    //     0,
-    //     model.particle_system.buffer_size,
-    // );
-
-    // encoder.copy_buffer_to_buffer(
-    //     &model.particle_system.velocity_in_buffer,
-    //     0,
-    //     &model.particle_system.velocity_out_buffer,
-    //     0,
-    //     model.particle_system.buffer_size,
-    // );
+    encoder.copy_buffer_to_buffer(
+        &model.particle_system.position_out_buffer,
+        0,
+        &model.particle_system.position_in_buffer,
+        0,
+        model.particle_system.buffer_size,
+    );
 
     encoder.copy_buffer_to_buffer(
-        &model.radix_sort.prefix_sum_buffer,
+        &model.particle_system.velocity_out_buffer,
         0,
-        &read_bin_buffer,
+        &model.particle_system.velocity_in_buffer,
         0,
-        model.radix_sort.buffer_size,
+        model.particle_system.buffer_size,
     );
 
     // model
@@ -153,7 +138,6 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     // Spawn a future that reads the result of the compute pass.
     let positions = model.positions.clone();
-    let buffer_size = model.particle_system.buffer_size;
     let read_positions_future = async move {
         let slice = read_position_buffer.slice(..);
         if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
@@ -167,31 +151,11 @@ fn update(app: &App, model: &mut Model, _update: Update) {
                 };
 
                 positions.copy_from_slice(slice);
-                println!("read: {:?}", positions);
             }
         }
     };
 
     model.threadpool.spawn_ok(read_positions_future);
-
-    let bin_buffer_size = model.radix_sort.buffer_size;
-    let read_bins_future = async move {
-        let slice = read_bin_buffer.slice(..);
-        if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
-            let bytes = &slice.get_mapped_range()[..];
-
-            // "Casst" the slice of bytes to a slice of Vec2 as required.
-            let slice = {
-                let len = bytes.len() / std::mem::size_of::<u32>();
-                let ptr = bytes.as_ptr() as *const u32;
-                unsafe { std::slice::from_raw_parts(ptr, len) }
-            };
-
-            println!("bins: {:?}", slice);
-        }
-    };
-
-    model.threadpool.spawn_ok(read_bins_future);
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
