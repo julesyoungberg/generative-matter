@@ -36,7 +36,7 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
     let window = app.window(window_id).unwrap();
-    let device = window.swap_chain_device();
+    let device = window.device();
     let sample_count = window.msaa_samples();
 
     println!("creating uniforms");
@@ -81,19 +81,21 @@ fn model(app: &App) -> Model {
 
 fn update(app: &App, model: &mut Model, _update: Update) {
     let window = app.main_window();
-    let device = window.swap_chain_device();
+    let device = window.device();
 
     // create a buffer for reading the particle positions
     let read_position_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("read-positions"),
         size: model.particle_system.buffer_size,
-        usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
 
     let read_bin_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("read-bins"),
         size: model.radix_sort.buffer_size,
-        usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
 
     // The encoder we'll use to encode the compute pass.
@@ -145,7 +147,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     //     .take_snapshot(device, &mut encoder, &model.uniform_texture);
 
     // Submit the compute pass to the device's queue.
-    window.swap_chain_queue().submit(&[encoder.finish()]);
+    window.queue().submit(Some(encoder.finish()));
 
     // model.frame_capturer.save_frame(app);
 
@@ -153,10 +155,10 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     let positions = model.positions.clone();
     let buffer_size = model.particle_system.buffer_size;
     let read_positions_future = async move {
-        let result = read_position_buffer.map_read(0, buffer_size).await;
-        if let Ok(mapping) = result {
+        let slice = read_position_buffer.slice(..);
+        if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
             if let Ok(mut positions) = positions.lock() {
-                let bytes = &mapping.as_slice();
+                let bytes = &slice.get_mapped_range()[..];
                 // "Cast" the slice of bytes to a slice of Vec2 as required.
                 let slice = {
                     let len = bytes.len() / std::mem::size_of::<Point2>();
@@ -174,9 +176,9 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     let bin_buffer_size = model.radix_sort.buffer_size;
     let read_bins_future = async move {
-        let result = read_bin_buffer.map_read(0, bin_buffer_size).await;
-        if let Ok(mapping) = result {
-            let bytes = &mapping.as_slice();
+        let slice = read_bin_buffer.slice(..);
+        if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
+            let bytes = &slice.get_mapped_range()[..];
 
             // "Casst" the slice of bytes to a slice of Vec2 as required.
             let slice = {

@@ -41,12 +41,14 @@ impl Compute {
                     let buffer_size = s[i];
 
                     bind_group_layout_builder = bind_group_layout_builder.storage_buffer(
-                        wgpu::ShaderStage::COMPUTE,
+                        wgpu::ShaderStages::COMPUTE,
                         storage_dynamic,
                         storage_readonly,
                     );
 
-                    bind_group_builder = bind_group_builder.buffer_bytes(buffer, 0..buffer_size);
+                    let buffer_size_bytes = std::num::NonZeroU64::new(buffer_size).unwrap();
+                    bind_group_builder =
+                        bind_group_builder.buffer_bytes(buffer, 0, Some(buffer_size_bytes));
                 }
             } else {
                 return Err(ComputeError::MissingBufferSizes);
@@ -57,7 +59,7 @@ impl Compute {
         if let Some(u) = uniform_buffer {
             let uniform_dynamic = false;
             bind_group_layout_builder = bind_group_layout_builder
-                .uniform_buffer(wgpu::ShaderStage::COMPUTE, uniform_dynamic);
+                .uniform_buffer(wgpu::ShaderStages::COMPUTE, uniform_dynamic);
 
             bind_group_builder = bind_group_builder.buffer::<T>(u, 0..1);
         }
@@ -75,7 +77,10 @@ impl Compute {
     }
 
     pub fn compute(&self, encoder: &mut wgpu::CommandEncoder, num_groups: u32) {
-        let mut cpass = encoder.begin_compute_pass();
+        let pass_desc = wgpu::ComputePassDescriptor {
+            label: Some("compute-pass"),
+        };
+        let mut cpass = encoder.begin_compute_pass(&pass_desc);
         cpass.set_pipeline(&self.pipeline);
         cpass.set_bind_group(0, &self.bind_group, &[]);
         cpass.dispatch(num_groups, 1, 1);
@@ -87,7 +92,9 @@ fn create_pipeline_layout(
     bind_group_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::PipelineLayout {
     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("compute-pipeline-layout"),
         bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
     })
 }
 
@@ -96,13 +103,11 @@ fn create_compute_pipeline(
     layout: &wgpu::PipelineLayout,
     cs_mod: &wgpu::ShaderModule,
 ) -> wgpu::ComputePipeline {
-    let compute_stage = wgpu::ProgrammableStageDescriptor {
+    let desc = wgpu::ComputePipelineDescriptor {
+        label: Some("compute-pipeline"),
+        layout: Some(layout),
         module: &cs_mod,
         entry_point: "main",
-    };
-    let desc = wgpu::ComputePipelineDescriptor {
-        layout,
-        compute_stage,
     };
     device.create_compute_pipeline(&desc)
 }

@@ -49,25 +49,37 @@ impl ParticleSystem {
         let buffer_size = (uniforms.data.particle_count as usize * std::mem::size_of::<Point2>())
             as wgpu::BufferAddress;
 
-        let position_in_buffer = device.create_buffer_with_data(
-            &position_bytes[..],
-            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-        );
+        let position_in_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: Some("position-in-buffer"),
+            contents: &position_bytes[..],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
-        let position_out_buffer = device.create_buffer_with_data(
-            &position_bytes[..],
-            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-        );
+        let position_out_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: Some("position-out-buffer"),
+            contents: &position_bytes[..],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
-        let velocity_in_buffer = device.create_buffer_with_data(
-            &velocity_bytes[..],
-            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-        );
+        let velocity_in_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: Some("velocity-in-buffer"),
+            contents: &velocity_bytes[..],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
-        let velocity_out_buffer = device.create_buffer_with_data(
-            &velocity_bytes[..],
-            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-        );
+        let velocity_out_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: Some("velocity-out-buffer"),
+            contents: &velocity_bytes[..],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
         // Create the compute shader module.
         let update_cs_mod =

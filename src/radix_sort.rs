@@ -50,17 +50,23 @@ impl RadixSort {
 
         println!("creating bin count buffer");
 
-        let bin_count_buffer = device.create_buffer_with_data(
-            &zeros[..],
-            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-        );
+        let bin_count_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: Some("bin-count-buffer"),
+            contents: &zeros[..],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
         println!("creating prefix sum buffer");
 
-        let prefix_sum_buffer = device.create_buffer_with_data(
-            &zeros[..],
-            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
-        );
+        let prefix_sum_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: Some("prefix-sum-buffer"),
+            contents: &zeros[..],
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+        });
 
         println!("creating computes");
 
@@ -153,7 +159,11 @@ impl RadixSort {
         buffer: &wgpu::Buffer,
     ) {
         let zeros = vec![0_u8; self.buffer_size as usize];
-        let zeros_buffer = device.create_buffer_with_data(&zeros[..], wgpu::BufferUsage::COPY_SRC);
+        let zeros_buffer = device.create_buffer_init(&wgpu::BufferInitDescriptor {
+            label: None,
+            contents: &zeros[..],
+            usage: wgpu::BufferUsages::COPY_SRC,
+        });
         encoder.copy_buffer_to_buffer(&zeros_buffer, 0, buffer, 0, self.buffer_size);
     }
 
