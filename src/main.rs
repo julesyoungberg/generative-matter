@@ -6,7 +6,6 @@ use particles::ParticleSystem;
 mod capture;
 mod compute;
 mod particles;
-mod radix_sort;
 mod render;
 mod uniforms;
 mod util;
@@ -16,7 +15,6 @@ struct Model {
     threadpool: futures::executor::ThreadPool,
     particle_system: ParticleSystem,
     uniforms: uniforms::UniformBuffer,
-    // radix_sort: radix_sort::RadixSort,
     frame_capturer: capture::FrameCapturer,
     render: render::CustomRenderer,
 }
@@ -46,19 +44,10 @@ fn model(app: &App) -> Model {
     let mut uniforms =
         uniforms::UniformBuffer::new(device, PARTICLE_COUNT, WIDTH as f32, HEIGHT as f32);
 
-    let bin_config = radix_sort::BinConfig::new(WIDTH as u64, HEIGHT as u64, -9, -10);
-    println!("bin config: {:?}", bin_config);
-    bin_config.update_uniforms(&mut uniforms);
-
     println!("creating particle system");
 
     let particle_system =
         particles::ParticleSystem::new(app, device, &uniforms, WIDTH as f32 * 0.1);
-
-    // println!("creating radix sort");
-
-    // let radix_sort =
-    //     radix_sort::RadixSort::new(app, device, &particle_system, &uniforms, sample_count);
 
     println!("finalizing reasources");
 
@@ -93,7 +82,6 @@ fn model(app: &App) -> Model {
         threadpool,
         particle_system,
         uniforms,
-        // radix_sort,
         frame_capturer,
         render,
     }
@@ -104,12 +92,12 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     let device = window.device();
 
     // create a buffer for reading the particle positions
-    let read_position_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("read-positions"),
-        size: model.particle_system.buffer_size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
+    // let read_position_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+    //     label: Some("read-positions"),
+    //     size: model.particle_system.buffer_size,
+    //     usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+    //     mapped_at_creation: false,
+    // });
 
     // The encoder we'll use to encode the compute pass.
     let desc = wgpu::CommandEncoderDescriptor {
@@ -119,19 +107,17 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     model.uniforms.update(device, &mut encoder);
 
-    // model.radix_sort.update(device, &mut encoder);
-
     model.particle_system.update(&mut encoder);
 
     model.render.render(&mut encoder);
 
-    encoder.copy_buffer_to_buffer(
-        &model.particle_system.position_out_buffer,
-        0,
-        &read_position_buffer,
-        0,
-        model.particle_system.buffer_size,
-    );
+    // encoder.copy_buffer_to_buffer(
+    //     &model.particle_system.position_out_buffer,
+    //     0,
+    //     &read_position_buffer,
+    //     0,
+    //     model.particle_system.buffer_size,
+    // );
 
     encoder.copy_buffer_to_buffer(
         &model.particle_system.position_out_buffer,
