@@ -18,11 +18,12 @@ struct Model {
     uniforms: uniforms::UniformBuffer,
     // radix_sort: radix_sort::RadixSort,
     frame_capturer: capture::FrameCapturer,
+    render: render::CustomRenderer,
 }
 
-const WIDTH: u32 = 1920;
-const HEIGHT: u32 = 1080;
-const PARTICLE_COUNT: u32 = 3000;
+const WIDTH: u32 = 960;
+const HEIGHT: u32 = 540;
+const PARTICLE_COUNT: u32 = 1000;
 
 fn main() {
     nannou::app(model).update(update).run();
@@ -67,7 +68,25 @@ fn model(app: &App) -> Model {
 
     let frame_capturer = capture::FrameCapturer::new(app);
 
-    println!("creating model");
+    println!("loading shaders");
+    let vs_mod = util::compile_shader(app, device, "shader.vert", shaderc::ShaderKind::Vertex);
+    let fs_mod = util::compile_shader(app, device, "shader.frag", shaderc::ShaderKind::Fragment);
+
+    let render = render::CustomRenderer::new::<uniforms::Uniforms>(
+        device,
+        &vs_mod,
+        &fs_mod,
+        Some(&vec![&particle_system.position_out_buffer]),
+        Some(&vec![&particle_system.buffer_size]),
+        None,
+        None,
+        Some(&uniforms.buffer),
+        WIDTH,
+        HEIGHT,
+        sample_count,
+        sample_count,
+    )
+    .unwrap();
 
     Model {
         positions: Arc::new(Mutex::new(positions)),
@@ -76,6 +95,7 @@ fn model(app: &App) -> Model {
         uniforms,
         // radix_sort,
         frame_capturer,
+        render,
     }
 }
 
@@ -103,6 +123,8 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     model.particle_system.update(&mut encoder);
 
+    model.render.render(&mut encoder);
+
     encoder.copy_buffer_to_buffer(
         &model.particle_system.position_out_buffer,
         0,
@@ -127,50 +149,41 @@ fn update(app: &App, model: &mut Model, _update: Update) {
         model.particle_system.buffer_size,
     );
 
-    // model
-    //     .frame_capturer
-    //     .take_snapshot(device, &mut encoder, &model.uniform_texture);
+    model
+        .frame_capturer
+        .take_snapshot(device, &mut encoder, &model.render.output_texture);
 
     // Submit the compute pass to the device's queue.
     window.queue().submit(Some(encoder.finish()));
 
-    // model.frame_capturer.save_frame(app);
+    model.frame_capturer.save_frame(app);
 
     // Spawn a future that reads the result of the compute pass.
-    let positions = model.positions.clone();
-    let read_positions_future = async move {
-        let slice = read_position_buffer.slice(..);
-        if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
-            if let Ok(mut positions) = positions.lock() {
-                let bytes = &slice.get_mapped_range()[..];
-                // "Cast" the slice of bytes to a slice of Vec2 as required.
-                let slice = {
-                    let len = bytes.len() / std::mem::size_of::<Point2>();
-                    let ptr = bytes.as_ptr() as *const Point2;
-                    unsafe { std::slice::from_raw_parts(ptr, len) }
-                };
+    // let positions = model.positions.clone();
+    // let read_positions_future = async move {
+    //     let slice = read_position_buffer.slice(..);
+    //     if let Ok(_) = slice.map_async(wgpu::MapMode::Read).await {
+    //         if let Ok(mut positions) = positions.lock() {
+    //             let bytes = &slice.get_mapped_range()[..];
+    //             // "Cast" the slice of bytes to a slice of Vec2 as required.
+    //             let slice = {
+    //                 let len = bytes.len() / std::mem::size_of::<Point2>();
+    //                 let ptr = bytes.as_ptr() as *const Point2;
+    //                 unsafe { std::slice::from_raw_parts(ptr, len) }
+    //             };
 
-                positions.copy_from_slice(slice);
-            }
-        }
-    };
+    //             positions.copy_from_slice(slice);
+    //         }
+    //     }
+    // };
 
-    model.threadpool.spawn_ok(read_positions_future);
+    // model.threadpool.spawn_ok(read_positions_future);
 }
 
-fn view(app: &App, model: &Model, frame: Frame) {
-    frame.clear(BLACK);
-    let draw = app.draw();
-
-    if let Ok(positions) = model.positions.lock() {
-        // println!("drawing: {:?}", positions);
-        for &p in positions.iter() {
-            draw.ellipse()
-                .radius(model.uniforms.data.particle_radius)
-                .color(WHITE)
-                .x_y(p.x, p.y);
-        }
-    }
-
-    draw.to_frame(app, &frame).unwrap();
+fn view(_app: &App, model: &Model, frame: Frame) {
+    let mut encoder = frame.command_encoder();
+    model
+        .render
+        .texture_reshaper
+        .encode_render_pass(frame.texture_view(), &mut *encoder);
 }
