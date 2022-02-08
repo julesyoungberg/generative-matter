@@ -94,8 +94,8 @@ float fbm(in vec3 x, in float H, in int numOctaves) {
 
 vec3 get_color(vec2 position) {
     vec3 color = vec3(0.0);
-    const float particle_size = 2.0;
-    const float range = 2.5;
+    const float particle_size = 1.0;
+    const float range = 2.3;
     float metaball = 0.0;
     float min_dist = max(width, height);
 
@@ -108,10 +108,10 @@ vec3 get_color(vec2 position) {
     }
 
     // add metaball
-    color = mix(color, vec3(fbm(vec3(position, min_dist), 1.0, 4)), smoothstep(1.0, 1.1, metaball));
+    color = mix(color, vec3(fbm(vec3(position, min_dist), 1.0, 3)) + 0.5, smoothstep(1.0, 1.2, metaball));
 
     // add center dot
-    // color = mix(color, vec3(0.0), smoothstep(particle_size + 0.1, particle_size, min_dist));
+    color = mix(color, vec3(0.0), smoothstep(particle_size + 0.1, particle_size, min_dist));
 
     return color;
 }

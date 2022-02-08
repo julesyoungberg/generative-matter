@@ -39,7 +39,7 @@ impl Uniforms {
             height,
             speed: 1.0,
             attraction_strength: 2.0,
-            repulsion_strength: 3.0,
+            repulsion_strength: 2.2,
             attraction_range: 10.0, // 0.045,
             repulsion_range: 120.0, // 1.2,
             center_strength: 0.0001,
