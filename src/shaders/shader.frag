@@ -32,20 +32,86 @@ layout(set = 0, binding = 1) uniform Uniforms {
     uint num_bins;
 };
 
+vec3 hash(in vec3 x) {
+    const vec3 k = vec3(0.3183099, 0.3678794, 0.3456789);
+    x = x*k + k.yzx;
+    return -1.0 + 2.0*fract( 16.0 * k*fract( x.x*x.y*(x.x+x.y)) );
+}
+
+// returns 3D value noise
+float noise(in vec3 x) {
+    // grid
+    vec3 p = floor(x);
+    vec3 w = fract(x);
+    
+    // quintic interpolant
+    vec3 u = w*w*w*(w*(w*6.0-15.0)+10.0);
+
+    
+    // gradients
+    vec3 ga = hash(p+vec3(0.0,0.0,0.0));
+    vec3 gb = hash(p+vec3(1.0,0.0,0.0));
+    vec3 gc = hash(p+vec3(0.0,1.0,0.0));
+    vec3 gd = hash(p+vec3(1.0,1.0,0.0));
+    vec3 ge = hash(p+vec3(0.0,0.0,1.0));
+    vec3 gf = hash(p+vec3(1.0,0.0,1.0));
+    vec3 gg = hash(p+vec3(0.0,1.0,1.0));
+    vec3 gh = hash(p+vec3(1.0,1.0,1.0));
+    
+    // projections
+    float va = dot(ga, w-vec3(0.0,0.0,0.0));
+    float vb = dot(gb, w-vec3(1.0,0.0,0.0));
+    float vc = dot(gc, w-vec3(0.0,1.0,0.0));
+    float vd = dot(gd, w-vec3(1.0,1.0,0.0));
+    float ve = dot(ge, w-vec3(0.0,0.0,1.0));
+    float vf = dot(gf, w-vec3(1.0,0.0,1.0));
+    float vg = dot(gg, w-vec3(0.0,1.0,1.0));
+    float vh = dot(gh, w-vec3(1.0,1.0,1.0));
+	
+    // interpolation
+    return va + 
+           u.x*(vb-va) + 
+           u.y*(vc-va) + 
+           u.z*(ve-va) + 
+           u.x*u.y*(va-vb-vc+vd) + 
+           u.y*u.z*(va-vc-ve+vg) + 
+           u.z*u.x*(va-vb-ve+vf) + 
+           u.x*u.y*u.z*(-va+vb+vc-vd+ve-vf-vg+vh);
+}
+
+float fbm(in vec3 x, in float H, in int numOctaves) {
+    float G = exp2(-H);
+    float f = 1.0;
+    float a = 1.0;
+    float t = 0.0;
+    for (int i = 0; i < numOctaves; i++) {
+        t += a*noise(f*x);
+        f *= 2.0;
+        a *= G;
+    }
+    return t;
+}
+
 vec3 get_color(vec2 position) {
-    const float particle_size = 2.0;
-    const float range = 20.0;
     vec3 color = vec3(0.0);
+    const float particle_size = 2.0;
+    const float range = 2.5;
+    float metaball = 0.0;
+    float min_dist = max(width, height);
 
     for (uint i = 0; i < particle_count; i++) {
         vec2 particle_position = positions[i];
         vec2 diff = position - particle_position;
-        
         float d = length(diff);
-        float v = smoothstep(particle_size + 0.5, particle_size, d);
-        color += v;
-        color += pow(range, 2.0) / pow(d, 2.0) * 0.001;
+        min_dist = min(d, min_dist);
+        metaball += range * range / dot(diff, diff);
     }
+
+    // add metaball
+    color = mix(color, vec3(fbm(vec3(position, min_dist), 1.0, 4)), smoothstep(1.0, 1.1, metaball));
+
+    // add center dot
+    // color = mix(color, vec3(0.0), smoothstep(particle_size + 0.1, particle_size, min_dist));
 
     return color;
 }
