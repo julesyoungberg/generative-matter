@@ -78,7 +78,8 @@ void main() {
 
     // clamp acceleration for stability
     if (max_acceleration > 0.0) {
-        acceleration = clamp(acceleration, -max_acceleration, max_acceleration);
+        float mag = min(length(acceleration), max_acceleration);
+        acceleration = normalize(acceleration) * mag;
     }
 
     velocity *= momentum;
@@ -86,7 +87,8 @@ void main() {
 
     // clamp velocity
     if (max_velocity > 0.0) {
-        velocity = clamp(velocity, -max_velocity, max_velocity);
+        float mag = min(length(velocity), max_velocity);
+        velocity = normalize(velocity) * mag;
     }
 
     position += velocity * speed;
