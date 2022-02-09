@@ -25,11 +25,6 @@ layout(set = 0, binding = 1) uniform Uniforms {
     float momentum;
     float max_acceleration;
     float max_velocity;
-    uint num_bins_x;
-    uint num_bins_y;
-    float bin_size_x;
-    float bin_size_y;
-    uint num_bins;
 };
 
 vec3 hash(in vec3 x) {

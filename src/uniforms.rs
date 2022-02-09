@@ -19,28 +19,18 @@ pub struct Uniforms {
     pub momentum: float,
     pub max_acceleration: float,
     pub max_velocity: float,
-    pub num_bins_x: uint,
-    pub num_bins_y: uint,
-    pub bin_size_x: float,
-    pub bin_size_y: float,
-    pub num_bins: uint,
 }
 
 impl Uniforms {
     pub fn new(particle_count: uint, width: float, height: float) -> Self {
-        let bin_size = 2.0;
-        let bin_rows = (height / bin_size).ceil() as u32;
-        let bin_cols = (width / bin_size).ceil() as u32;
-        let num_bins = bin_rows * bin_cols;
-
         Uniforms {
             particle_count,
             width,
             height,
             speed: 1.0,
-            attraction_strength: 2.0,
-            repulsion_strength: 2.5,
-            attraction_range: 10.0, // 0.045,
+            attraction_strength: 2.8,
+            repulsion_strength: 3.0,
+            attraction_range: 20.0, // 0.045,
             repulsion_range: 120.0, // 1.2,
             center_strength: 0.0001,
             particle_radius: 2.0,
@@ -48,11 +38,6 @@ impl Uniforms {
             momentum: 0.86,
             max_acceleration: 0.0,
             max_velocity: 5.0,
-            num_bins_x: bin_cols,
-            num_bins_y: bin_rows,
-            bin_size_x: 2.0,
-            bin_size_y: 2.0,
-            num_bins,
         }
     }
 }
