@@ -31,11 +31,11 @@ impl Uniforms {
             attraction_strength: 2.8,
             repulsion_strength: 3.0,
             attraction_range: 20.0, // 0.045,
-            repulsion_range: 120.0, // 1.2,
+            repulsion_range: 130.0, // 1.2,
             center_strength: 0.0001,
             particle_radius: 2.0,
             collision_response: 0.1,
-            momentum: 0.86,
+            momentum: 0.97,
             max_acceleration: 0.0,
             max_velocity: 5.0,
         }

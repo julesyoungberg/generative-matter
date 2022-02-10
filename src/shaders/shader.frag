@@ -89,7 +89,7 @@ float fbm(in vec3 x, in float H, in int numOctaves) {
 
 vec3 get_color(vec2 position) {
     vec3 color = vec3(0.0);
-    const float range = particle_radius + 0.5;
+    const float range = particle_radius + 0.6;
     float metaball = 0.0;
     float min_dist = max(width, height);
 
